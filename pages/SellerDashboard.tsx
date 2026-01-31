@@ -115,6 +115,7 @@ export const SellerDashboard: React.FC<SellerDashboardProps> = ({ user }) => {
       stok: Number(formData.stok),
       gambar_url: formData.gambar_url,
       lat_long: formData.lat_long,
+      address_name: formData.address_name,
     };
 
     const optimisticProd: Product = {

@@ -32,6 +32,7 @@ export interface Product {
   stok: number;
   gambar_url: string;
   lat_long: string;
+  address_name?: string;
   created_at: string;
   average_rating?: number;
   total_reviews?: number;

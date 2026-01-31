@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { User, Product, Order, CartItem, OrderStatus } from '../types';
 import { api, calculateDistance } from '../services/api';
 import { Button, Input, Badge, LoadingSpinner } from '../components/ui';
-import { ShoppingCart, MapPin, Search, Plus, Minus, X, Package, MessageCircle, CheckCircle, Wallet, Filter, Star, Store, ShoppingBag } from 'lucide-react';
+import { ShoppingCart, MapPin, Search, Plus, Minus, X, Package, MessageCircle, CheckCircle, Wallet, Filter, Star, Store, ShoppingBag, ArrowRight } from 'lucide-react';
 import { LocationPicker } from '../components/LocationPicker';
 import { WalletCard } from '../components/WalletCard';
 import { ChatWindow } from '../components/ChatWindow';
@@ -348,7 +348,6 @@ export const BuyerDashboard: React.FC<BuyerDashboardProps> = ({ user }) => {
                 </div>
                 <div className="p-3 flex-1 flex flex-col">
                   <div className="flex justify-between items-start mb-1">
-                      {/* ADDED TOOLTIP HERE */}
                       <h3 className="font-bold text-gray-800 text-sm line-clamp-1 cursor-help" title={p.deskripsi}>{p.nama}</h3>
                   </div>
                   <div className="mb-2">
@@ -445,13 +444,23 @@ export const BuyerDashboard: React.FC<BuyerDashboardProps> = ({ user }) => {
                   <div className="space-y-6 pb-24">
                     <h2 className="font-bold text-lg">Konfirmasi Pesanan</h2>
                     
-                    <div className="bg-green-50 p-3 rounded-lg flex items-start gap-3 border border-green-200">
-                       <MapPin className="text-green-600 mt-1" size={18} />
-                       <div>
-                         <p className="text-xs text-green-800 font-bold">Alamat Pengantaran:</p>
-                         <p className="text-sm text-green-900">{userLocation.address}</p>
+                    {/* Confirmed Address Block */}
+                    <div className="bg-white p-4 rounded-xl shadow-sm border border-brand-green relative overflow-hidden">
+                       <div className="absolute top-0 right-0 bg-brand-green text-white text-[10px] px-2 py-1 rounded-bl-lg font-bold flex items-center gap-1">
+                           <CheckCircle size={10} /> Alamat Terkonfirmasi
                        </div>
-                       <button onClick={() => setCheckoutStep('location')} className="text-xs text-green-600 underline ml-auto">Ubah</button>
+                       <div className="flex items-start gap-3 mt-2">
+                           <div className="bg-green-100 p-2 rounded-full shrink-0">
+                               <MapPin className="text-brand-green" size={20} />
+                           </div>
+                           <div className="flex-1">
+                               <p className="text-xs text-gray-500 mb-1">Dikirim ke:</p>
+                               <p className="font-bold text-gray-800 text-sm leading-tight mb-2">{userLocation.address}</p>
+                               <button onClick={() => setCheckoutStep('location')} className="text-xs text-gray-400 font-semibold underline hover:text-brand-green">
+                                   Ubah Lokasi
+                               </button>
+                           </div>
+                       </div>
                     </div>
 
                     <WalletCard user={user} onBalanceChange={setWalletBalance} />
@@ -505,7 +514,7 @@ export const BuyerDashboard: React.FC<BuyerDashboardProps> = ({ user }) => {
                         </div>
                       </div>
                       <Button onClick={handleCheckout} disabled={loading || walletBalance < calculateCartTotals().grandTotal}>
-                        {loading ? 'Memproses...' : 'Bayar & Pesan'}
+                        {loading ? 'Memproses...' : 'Beli Sekarang'}
                       </Button>
                     </div>
                   </div>
