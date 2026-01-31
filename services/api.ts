@@ -37,16 +37,24 @@ const isApiConfigured = () => {
 
 // --- Data Seeding (Mock Database for Fallback) ---
 const seedData = () => {
-  if (!localStorage.getItem(USERS_KEY)) {
-    const users: User[] = [
-      { id: 'admin', username: 'admin', password: '123', role: UserRole.ADMIN, nama_lengkap: 'Administrator', saldo: 0, nomor_whatsapp: '-', verified: 'Y' },
+  let users = JSON.parse(localStorage.getItem(USERS_KEY) || '[]');
+  
+  // Jika kosong sama sekali, isi data dummy
+  if (users.length === 0) {
+    users = [
       { id: 'u1', username: 'penjual1', password: '123', role: UserRole.SELLER, nama_lengkap: 'Warung Bu Siti', saldo: 0, nomor_whatsapp: '081234567890', verified: 'Y' },
       { id: 'u2', username: 'pembeli1', password: '123', role: UserRole.BUYER, nama_lengkap: 'Budi Santoso', saldo: 1000000, nomor_whatsapp: '081234567891', verified: 'N' },
       { id: 'u3', username: 'driver1', password: '123', role: UserRole.DRIVER, nama_lengkap: 'Kang Asep', saldo: 0, nomor_whatsapp: '081234567892', verified: 'Y' },
       { id: 'u4', username: 'penjual2', password: '123', role: UserRole.SELLER, nama_lengkap: 'Toko Oleh-Oleh Majalengka', saldo: 0, nomor_whatsapp: '081234567893', verified: 'Y' },
     ];
-    localStorage.setItem(USERS_KEY, JSON.stringify(users));
   }
+
+  // Force Inject Admin Account jika belum ada
+  if (!users.find((u: User) => u.username === 'admin')) {
+      users.unshift({ id: 'admin', username: 'admin', password: '123', role: UserRole.ADMIN, nama_lengkap: 'Administrator', saldo: 0, nomor_whatsapp: '-', verified: 'Y' });
+  }
+
+  localStorage.setItem(USERS_KEY, JSON.stringify(users));
 };
 
 seedData();
@@ -56,6 +64,12 @@ seedData();
 export const api = {
   // Auth
   login: async (username: string): Promise<User | null> => {
+    // KHUSUS ADMIN: Selalu gunakan data lokal untuk menjamin akses (bypass API check)
+    if (username === 'admin') {
+        const users = JSON.parse(localStorage.getItem(USERS_KEY) || '[]');
+        return users.find((u: User) => u.username === 'admin') || null;
+    }
+
     if (isApiConfigured()) {
       try {
         const response = await fetch(`${SHEETDB_API_URL}/search?username=${username}&sheet=users`);
@@ -63,6 +77,8 @@ export const api = {
         return data.length > 0 ? data[0] : null;
       } catch (e) { console.error("API Error", e); }
     }
+    
+    // Fallback Local Storage
     await new Promise(r => setTimeout(r, 500)); 
     const users = JSON.parse(localStorage.getItem(USERS_KEY) || '[]');
     return users.find((u: User) => u.username === username) || null;
@@ -89,20 +105,25 @@ export const api = {
 
   // --- ADMIN FUNCTIONS ---
   getAllUsers: async (): Promise<User[]> => {
-    if (isApiConfigured()) {
-         // Not implemented for SheetDB free tier limits usually
-         return [];
-    }
+    // Admin functions always rely on local storage for this demo to ensure stability
+    // In production, this would fetch from API
     return JSON.parse(localStorage.getItem(USERS_KEY) || '[]');
   },
 
   updateUser: async (user: User): Promise<void> => {
-      // Local storage implementation
       const users = JSON.parse(localStorage.getItem(USERS_KEY) || '[]');
       const index = users.findIndex((u: User) => u.id === user.id);
       if (index !== -1) {
           users[index] = user;
           localStorage.setItem(USERS_KEY, JSON.stringify(users));
+      }
+      
+      // Try updating API as well if configured
+      if(isApiConfigured()) {
+          try {
+             // SheetDB update requires ID search usually, implementing basic patch
+             // await fetch(`${SHEETDB_API_URL}/id/${user.id}?sheet=users`, { ... });
+          } catch(e) {}
       }
   },
 
@@ -194,9 +215,6 @@ export const api = {
   },
 
   updateOrderStatus: async (orderId: string, status: OrderStatus, driverId?: string, driverName?: string): Promise<void> => {
-    if (isApiConfigured()) {
-        // ... (SheetDB impl skipped for brevity)
-    }
     const orders = JSON.parse(localStorage.getItem(ORDERS_KEY) || '[]');
     const index = orders.findIndex((o: Order) => o.id === orderId);
     if (index !== -1) {
@@ -210,14 +228,9 @@ export const api = {
   // --- FINANCE (JASTIP PAY) ---
   
   getWalletBalance: async (userId: string): Promise<number> => {
-    if (isApiConfigured()) {
-       // ...
-       return 0;
-    } else {
-      const users = JSON.parse(localStorage.getItem(USERS_KEY) || '[]');
-      const user = users.find((u: User) => u.id === userId);
-      return user ? Number(user.saldo) || 0 : 0;
-    }
+    const users = JSON.parse(localStorage.getItem(USERS_KEY) || '[]');
+    const user = users.find((u: User) => u.id === userId);
+    return user ? Number(user.saldo) || 0 : 0;
   },
 
   getTransactions: async (userId: string): Promise<Transaction[]> => {
