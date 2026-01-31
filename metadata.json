@@ -1,0 +1,7 @@
+{
+  "name": "UMKM Jastip Majalengka",
+  "description": "Aplikasi Jastip terintegrasi untuk Penjual, Pembeli, dan Driver dengan fitur hitung ongkir otomatis berbasis lokasi.",
+  "requestFramePermissions": [
+    "geolocation"
+  ]
+}
