@@ -1,9 +1,8 @@
 import { User, Product, Order, UserRole, OrderStatus } from '../types';
 
 // --- KONFIGURASI DATABASE ---
-// Ganti URL ini dengan API ID dari sheetdb.io milik Anda
-// Contoh format: 'https://sheetdb.io/api/v1/58f61be4dda40'
-const SHEETDB_API_URL = 'https://sheetdb.io/api/v1/YOUR_API_ID_HERE';
+// URL API SheetDB yang telah dikonfigurasi
+const SHEETDB_API_URL = 'https://sheetdb.io/api/v1/c4w14i8u3j50z';
 
 // Constants Keys for LocalStorage Fallback
 const USERS_KEY = 'jastip_users';
@@ -31,6 +30,7 @@ function deg2rad(deg: number) {
 
 // --- Helper: Check if using Real API ---
 const isApiConfigured = () => {
+  // Checks if the user has replaced the placeholder text
   return SHEETDB_API_URL && !SHEETDB_API_URL.includes('YOUR_API_ID_HERE');
 };
 
