@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { User } from '../types';
 import { api } from '../services/api';
 import { Button, Input, LoadingSpinner } from '../components/ui';
-import { CheckCircle, XCircle, Edit, Save } from 'lucide-react';
+import { CheckCircle, XCircle, Edit, Save, Database, RotateCw } from 'lucide-react';
 
 interface AdminDashboardProps {
   user: User;
@@ -23,6 +23,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = () => {
     const data = await api.getAllUsers();
     setUsers(data);
     setLoading(false);
+  };
+
+  const handleSeed = async () => {
+    if(!confirm("Isi database dengan data dummy? Ini akan menambahkan User sampel (Admin, Penjual, Pembeli, Driver) dan Produk.")) return;
+    setLoading(true);
+    await api.seedDatabase();
+    await loadUsers();
+    setLoading(false);
+    alert("Database berhasil diinisialisasi! Sekarang Anda bisa login dengan akun 'admin', 'penjual1', 'pembeli1', atau 'driver1' (Pass: 123).");
   };
 
   const toggleVerification = async (user: User) => {
@@ -56,10 +65,25 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = () => {
 
   return (
     <div className="p-4">
-      <h2 className="text-xl font-bold mb-4 text-brand-green">Panel Admin - Kelola User</h2>
+      <div className="flex justify-between items-center mb-4">
+        <h2 className="text-xl font-bold text-brand-green">Panel Admin</h2>
+        <div className="flex gap-2">
+            <Button size="sm" variant="outline" onClick={loadUsers} className="w-auto px-2"><RotateCw size={14} /></Button>
+            <Button size="sm" variant="secondary" onClick={handleSeed} className="w-auto px-3 text-xs flex gap-1">
+                <Database size={14} /> Init DB
+            </Button>
+        </div>
+      </div>
       
       {loading ? <LoadingSpinner /> : (
         <div className="space-y-4">
+           {users.length === 0 && (
+               <div className="text-center p-6 border-2 border-dashed border-gray-300 rounded-xl bg-gray-50">
+                   <p className="text-gray-500 mb-4">Database Kosong</p>
+                   <Button onClick={handleSeed} className="w-auto mx-auto">Isi Data Dummy</Button>
+               </div>
+           )}
+
            {users.map(u => (
              <div key={u.id} className="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
                {editingId === u.id ? (
