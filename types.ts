@@ -1,3 +1,4 @@
+
 export enum UserRole {
   SELLER = 'SELLER',
   BUYER = 'BUYER',
@@ -41,16 +42,34 @@ export interface Order {
   product_name: string;
   product_img: string;
   jumlah: number;
-  zona_ongkir?: string; // Legacy field, keeping for compatibility
+  zona_ongkir?: string; 
   jarak_km: number;
   total_ongkir: number;
   total_harga: number;
   status: OrderStatus;
-  alamat_pengiriman: string; // Simplification for demo: coordinate based, but storing text address if needed
+  alamat_pengiriman: string; 
   lat_long_pengiriman: string;
   created_at: string;
 }
 
 export interface CartItem extends Product {
   qty: number;
+}
+
+export interface Transaction {
+  id: string;
+  user_id: string;
+  type: 'TOPUP' | 'PAYMENT' | 'INCOME' | 'WITHDRAW';
+  amount: number;
+  description: string;
+  created_at: string;
+}
+
+export interface Message {
+  id: string;
+  order_id: string;
+  sender_id: string;
+  sender_name: string;
+  content: string;
+  timestamp: string;
 }

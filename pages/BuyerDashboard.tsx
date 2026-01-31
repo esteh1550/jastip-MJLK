@@ -2,8 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { User, Product, Order, CartItem, OrderStatus } from '../types';
 import { api, calculateDistance } from '../services/api';
 import { Button, Input, Badge, LoadingSpinner } from '../components/ui';
-import { ShoppingCart, MapPin, Search, Plus, Minus, X, Package } from 'lucide-react';
+import { ShoppingCart, MapPin, Search, Plus, Minus, X, Package, MessageCircle, CheckCircle } from 'lucide-react';
 import { LocationPicker } from '../components/LocationPicker';
+import { WalletCard } from '../components/WalletCard';
+import { ChatWindow } from '../components/ChatWindow';
 
 interface BuyerDashboardProps {
   user: User;
@@ -17,10 +19,14 @@ export const BuyerDashboard: React.FC<BuyerDashboardProps> = ({ user }) => {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   
-  // Checkout State
+  // Checkout & Wallet State
   const [userLocation, setUserLocation] = useState<{lat: number, long: number, address?: string} | null>(null);
   const [locating, setLocating] = useState(false);
-  const [checkoutStep, setCheckoutStep] = useState<'review' | 'location' | 'confirm'>('review');
+  const [checkoutStep, setCheckoutStep] = useState<'review' | 'location' | 'confirm' | 'success'>('review');
+  const [walletBalance, setWalletBalance] = useState(0);
+  
+  // Chat State
+  const [activeChatOrder, setActiveChatOrder] = useState<Order | null>(null);
 
   useEffect(() => {
     loadProducts();
@@ -142,11 +148,18 @@ export const BuyerDashboard: React.FC<BuyerDashboardProps> = ({ user }) => {
 
   const handleCheckout = async () => {
     if (!userLocation) return;
-    const { groups } = calculateCartTotals();
+    const { grandTotal, groups } = calculateCartTotals();
+    
+    // Check Wallet Balance
+    if (walletBalance < grandTotal) {
+      alert(`Saldo tidak cukup! Total: Rp ${grandTotal.toLocaleString()}, Saldo: Rp ${walletBalance.toLocaleString()}`);
+      return;
+    }
     
     setLoading(true);
     const orderPayloads = [];
 
+    // 1. Create Orders
     for (const group of groups) {
       for (const item of group.items) {
         const shippingPerItem = Math.floor(group.shippingCost / group.items.length);
@@ -169,12 +182,16 @@ export const BuyerDashboard: React.FC<BuyerDashboardProps> = ({ user }) => {
     }
 
     await api.createOrder(orderPayloads);
+
+    // 2. Deduct Balance
+    await api.addTransaction(user.id, 'PAYMENT', grandTotal, `Pembayaran Order Jastip (${orderPayloads.length} item)`);
+
     setCart([]);
-    setView('orders');
-    setCheckoutStep('review');
+    setCheckoutStep('success'); // New Success Step
     setUserLocation(null);
     setLoading(false);
     loadOrders();
+    setWalletBalance(prev => prev - grandTotal); // Optimistic update
   };
 
   // --- Renders ---
@@ -185,17 +202,22 @@ export const BuyerDashboard: React.FC<BuyerDashboardProps> = ({ user }) => {
     <div className="pb-20">
       {/* View Switcher */}
       {view === 'browse' && (
-        <div className="sticky top-0 bg-gray-50 pt-2 px-4 z-20 pb-2">
-          <div className="relative">
-            <Search className="absolute left-3 top-3 text-gray-400" size={18} />
-            <Input 
-              placeholder="Cari jajanan..." 
-              className="pl-10" 
-              value={searchTerm}
-              onChange={e => setSearchTerm(e.target.value)}
-            />
+        <>
+          <div className="bg-gray-50 p-4 pb-2">
+             <WalletCard userId={user.id} onBalanceChange={setWalletBalance} />
           </div>
-        </div>
+          <div className="sticky top-0 bg-gray-50 pt-0 px-4 z-20 pb-4">
+            <div className="relative">
+              <Search className="absolute left-3 top-3 text-gray-400" size={18} />
+              <Input 
+                placeholder="Cari jajanan..." 
+                className="pl-10" 
+                value={searchTerm}
+                onChange={e => setSearchTerm(e.target.value)}
+              />
+            </div>
+          </div>
+        </>
       )}
 
       {/* Main Content */}
@@ -230,7 +252,7 @@ export const BuyerDashboard: React.FC<BuyerDashboardProps> = ({ user }) => {
         {/* CART */}
         {view === 'cart' && (
           <div>
-            {cart.length === 0 ? (
+            {cart.length === 0 && checkoutStep !== 'success' ? (
               <div className="text-center mt-20 text-gray-400">Keranjang kosong.</div>
             ) : (
               <>
@@ -307,6 +329,8 @@ export const BuyerDashboard: React.FC<BuyerDashboardProps> = ({ user }) => {
                        <button onClick={() => setCheckoutStep('location')} className="text-xs text-green-600 underline ml-auto">Ubah</button>
                     </div>
 
+                    <WalletCard userId={user.id} onBalanceChange={setWalletBalance} />
+
                     {calculateCartTotals().groups.map(group => (
                       <div key={group.sellerId} className="bg-white p-4 rounded-xl shadow-sm border border-green-100">
                         <div className="flex justify-between items-center border-b pb-2 mb-2">
@@ -333,13 +357,35 @@ export const BuyerDashboard: React.FC<BuyerDashboardProps> = ({ user }) => {
                     <div className="fixed bottom-0 left-0 right-0 bg-white border-t p-4 max-w-md mx-auto">
                       <div className="flex justify-between items-center mb-4">
                         <span className="text-gray-600">Total Bayar</span>
-                        <span className="text-xl font-bold text-brand-green">Rp {calculateCartTotals().grandTotal.toLocaleString()}</span>
+                        <div className="text-right">
+                          <div className="text-xl font-bold text-brand-green">Rp {calculateCartTotals().grandTotal.toLocaleString()}</div>
+                          {walletBalance < calculateCartTotals().grandTotal && (
+                            <div className="text-xs text-red-500 font-bold">Saldo Kurang</div>
+                          )}
+                        </div>
                       </div>
-                      <Button onClick={handleCheckout} disabled={loading}>
-                        {loading ? 'Memproses...' : 'Buat Pesanan'}
+                      <Button onClick={handleCheckout} disabled={loading || walletBalance < calculateCartTotals().grandTotal}>
+                        {loading ? 'Memproses...' : 'Bayar & Pesan'}
                       </Button>
                     </div>
                   </div>
+                )}
+
+                {/* SUCCESS PAGE */}
+                {checkoutStep === 'success' && (
+                   <div className="flex flex-col items-center justify-center pt-10 px-6 text-center">
+                     <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mb-6">
+                       <CheckCircle size={40} className="text-brand-green" />
+                     </div>
+                     <h2 className="text-2xl font-bold text-gray-800 mb-2">Pesanan Berhasil!</h2>
+                     <p className="text-gray-500 mb-8">
+                       Pembayaran berhasil. Penjual telah dinotifikasi. 
+                       Tunggu makananmu diantar ya!
+                     </p>
+                     <Button onClick={() => { setView('orders'); setCheckoutStep('review'); }}>
+                       Lihat Pesanan Saya
+                     </Button>
+                   </div>
                 )}
               </>
             )}
@@ -358,15 +404,36 @@ export const BuyerDashboard: React.FC<BuyerDashboardProps> = ({ user }) => {
                  </div>
                  <div className="flex gap-3">
                    <img src={o.product_img} className="w-16 h-16 rounded bg-gray-100 object-cover" />
-                   <div>
+                   <div className="flex-1">
                      <h4 className="font-bold text-gray-800">{o.product_name}</h4>
                      <p className="text-sm text-gray-600">{o.jumlah} item • Rp {o.total_harga.toLocaleString()}</p>
                      <p className="text-xs text-gray-400 mt-1">Seller: {o.seller_id} (Jarak {o.jarak_km}km)</p>
+                     
+                     <div className="mt-3 flex justify-end">
+                       <Button 
+                        size="sm" 
+                        variant="secondary" 
+                        className="py-1 px-3 text-xs w-auto"
+                        onClick={() => setActiveChatOrder(o)}
+                       >
+                         <MessageCircle size={14} /> Chat
+                       </Button>
+                     </div>
                    </div>
                  </div>
                </div>
              ))}
           </div>
+        )}
+
+        {/* Chat Modal */}
+        {activeChatOrder && (
+          <ChatWindow 
+            orderId={activeChatOrder.id} 
+            currentUser={user} 
+            onClose={() => setActiveChatOrder(null)}
+            title={`${activeChatOrder.product_name} (${activeChatOrder.seller_id})`}
+          />
         )}
       </div>
 

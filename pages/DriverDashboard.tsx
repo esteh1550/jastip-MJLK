@@ -2,7 +2,9 @@ import React, { useEffect, useState } from 'react';
 import { User, Order, OrderStatus } from '../types';
 import { api } from '../services/api';
 import { Badge, Button, LoadingSpinner } from '../components/ui';
-import { MapPin, Navigation, CheckCircle, Package } from 'lucide-react';
+import { MapPin, Navigation, CheckCircle, Package, MessageCircle } from 'lucide-react';
+import { ChatWindow } from '../components/ChatWindow';
+import { WalletCard } from '../components/WalletCard';
 
 interface DriverDashboardProps {
   user: User;
@@ -12,6 +14,7 @@ export const DriverDashboard: React.FC<DriverDashboardProps> = ({ user }) => {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'available' | 'active' | 'history'>('available');
+  const [activeChatOrder, setActiveChatOrder] = useState<Order | null>(null);
 
   const fetchOrders = async () => {
     setLoading(true);
@@ -22,17 +25,30 @@ export const DriverDashboard: React.FC<DriverDashboardProps> = ({ user }) => {
 
   useEffect(() => {
     fetchOrders();
+    // Refresh for available orders
+    const interval = setInterval(() => {
+        api.getOrders().then(setOrders);
+    }, 20000);
+    return () => clearInterval(interval);
   }, []);
 
   const handleTakeOrder = async (orderId: string) => {
-    // Optimistic Update
+    if(!confirm('Ambil pesanan ini?')) return;
     setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: OrderStatus.DIKIRIM, driver_id: user.id } : o));
     await api.updateOrderStatus(orderId, OrderStatus.DIKIRIM, user.id);
   };
 
-  const handleFinishOrder = async (orderId: string) => {
-    setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: OrderStatus.SELESAI } : o));
-    await api.updateOrderStatus(orderId, OrderStatus.SELESAI);
+  const handleFinishOrder = async (order: Order) => {
+    if(!confirm('Selesaikan pesanan dan terima ongkir?')) return;
+    setOrders(prev => prev.map(o => o.id === order.id ? { ...o, status: OrderStatus.SELESAI } : o));
+    
+    await api.updateOrderStatus(order.id, OrderStatus.SELESAI);
+    
+    // Release money: Driver gets Ongkir, Seller gets Price
+    await api.addTransaction(user.id, 'INCOME', order.total_ongkir, `Ongkir Order #${order.id}`);
+    await api.addTransaction(order.seller_id, 'INCOME', order.total_harga - order.total_ongkir, `Penjualan Order #${order.id}`);
+    
+    alert('Order selesai! Saldo ongkir masuk ke dompet.');
   };
 
   const availableOrders = orders.filter(o => o.status === OrderStatus.PENDING);
@@ -50,7 +66,7 @@ export const DriverDashboard: React.FC<DriverDashboardProps> = ({ user }) => {
         <img src={order.product_img} alt={order.product_name} className="w-16 h-16 object-cover rounded-lg bg-gray-100" />
         <div>
           <h3 className="font-bold text-gray-800">{order.product_name}</h3>
-          <p className="text-sm text-gray-600">{order.jumlah}x • Rp {order.total_harga.toLocaleString()}</p>
+          <p className="text-sm text-gray-600">{order.jumlah}x</p>
         </div>
       </div>
 
@@ -59,7 +75,7 @@ export const DriverDashboard: React.FC<DriverDashboardProps> = ({ user }) => {
           <Package size={16} className="text-blue-500 mt-0.5" />
           <div>
             <p className="text-xs text-gray-500">Ambil dari:</p>
-            <p className="text-sm font-medium">{order.seller_id} (LatLong: TODO Fetch Name)</p>
+            <p className="text-sm font-medium">{order.seller_id}</p>
           </div>
         </div>
         <div className="flex items-start gap-2">
@@ -73,14 +89,28 @@ export const DriverDashboard: React.FC<DriverDashboardProps> = ({ user }) => {
       </div>
 
       <div className="flex justify-between items-center pt-2 border-t border-gray-100">
-         <span className="font-bold text-brand-green">Ongkir: Rp {order.total_ongkir.toLocaleString()}</span>
-         {actionBtn}
+         <div className="flex flex-col">
+            <span className="text-xs text-gray-500">Ongkir Driver</span>
+            <span className="font-bold text-brand-green">Rp {order.total_ongkir.toLocaleString()}</span>
+         </div>
+         <div className="flex gap-2">
+            {(order.status === OrderStatus.DIKIRIM || order.status === OrderStatus.PENDING) && (
+                 <Button size="sm" variant="outline" className="w-auto py-1 px-2" onClick={() => setActiveChatOrder(order)}>
+                    <MessageCircle size={16} />
+                 </Button>
+            )}
+            {actionBtn}
+         </div>
       </div>
     </div>
   );
 
   return (
     <div>
+      <div className="mb-4">
+        <WalletCard userId={user.id} />
+      </div>
+
       {/* Tabs */}
       <div className="flex gap-2 mb-6 bg-white p-1 rounded-xl border border-gray-200 sticky top-0 z-10">
         <button 
@@ -127,7 +157,7 @@ export const DriverDashboard: React.FC<DriverDashboardProps> = ({ user }) => {
                 key={order.id} 
                 order={order} 
                 actionBtn={
-                  <Button size="sm" variant="secondary" className="w-auto py-1 px-4 text-sm" onClick={() => handleFinishOrder(order.id)}>
+                  <Button size="sm" variant="secondary" className="w-auto py-1 px-4 text-sm" onClick={() => handleFinishOrder(order)}>
                     <CheckCircle size={14} /> Selesaikan
                   </Button>
                 } 
@@ -142,6 +172,16 @@ export const DriverDashboard: React.FC<DriverDashboardProps> = ({ user }) => {
             ))
           )}
         </div>
+      )}
+
+      {/* Chat Modal */}
+      {activeChatOrder && (
+          <ChatWindow 
+            orderId={activeChatOrder.id} 
+            currentUser={user} 
+            onClose={() => setActiveChatOrder(null)}
+            title={`Order #${activeChatOrder.id.toString().slice(-4)}`}
+          />
       )}
     </div>
   );

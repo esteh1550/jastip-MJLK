@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { User, Product, Order } from '../types';
+import { User, Product, Order, OrderStatus } from '../types';
 import { api } from '../services/api';
 import { Button, Input, Badge, LoadingSpinner } from '../components/ui';
-import { Plus, Trash, Edit, Package, ShoppingBag } from 'lucide-react';
+import { Plus, Trash, Edit, Package, ShoppingBag, RefreshCw, MessageCircle } from 'lucide-react';
 import { LocationPicker } from '../components/LocationPicker';
+import { ChatWindow } from '../components/ChatWindow';
+import { WalletCard } from '../components/WalletCard';
 
 interface SellerDashboardProps {
   user: User;
@@ -15,20 +17,27 @@ export const SellerDashboard: React.FC<SellerDashboardProps> = ({ user }) => {
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
   const [view, setView] = useState<'products' | 'orders'>('products');
+  const [activeChatOrder, setActiveChatOrder] = useState<Order | null>(null);
 
   // Form State
   const [formData, setFormData] = useState({
     nama: '', deskripsi: '', harga: '', stok: '', gambar_url: 'https://picsum.photos/300/300', lat_long: '', address_name: ''
   });
 
-  const loadData = async () => {
-    // Only set loading on initial fetch
-    if(products.length === 0) setLoading(true);
+  const loadData = async (background = false) => {
+    if(!background && products.length === 0) setLoading(true);
     
     try {
+      // Parallel fetch
       const [allProds, allOrders] = await Promise.all([api.getProducts(), api.getOrders()]);
       setProducts(allProds.filter(p => p.seller_id === user.id));
-      setOrders(allOrders.filter(o => o.seller_id === user.id));
+      
+      // Sort orders by newest
+      const myOrders = allOrders
+        .filter(o => o.seller_id === user.id)
+        .sort((a,b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+      
+      setOrders(myOrders);
     } catch (e) {
       console.error("Failed to load data", e);
     } finally {
@@ -38,6 +47,9 @@ export const SellerDashboard: React.FC<SellerDashboardProps> = ({ user }) => {
 
   useEffect(() => {
     loadData();
+    // Auto refresh orders every 15 seconds to catch new checkouts
+    const interval = setInterval(() => loadData(true), 15000);
+    return () => clearInterval(interval);
   }, [user.id]);
 
   const handleAddProduct = async (e: React.FormEvent) => {
@@ -59,7 +71,6 @@ export const SellerDashboard: React.FC<SellerDashboardProps> = ({ user }) => {
       lat_long: formData.lat_long,
     };
 
-    // 1. Optimistic Update (Immediate UI Change)
     const optimisticProd: Product = {
       ...newProdPayload,
       id: tempId,
@@ -70,61 +81,61 @@ export const SellerDashboard: React.FC<SellerDashboardProps> = ({ user }) => {
     setShowAddModal(false);
     setFormData({ nama: '', deskripsi: '', harga: '', stok: '', gambar_url: 'https://picsum.photos/300/300', lat_long: '', address_name: '' });
 
-    // 2. Actual API Call
     try {
       const createdProduct = await api.addProduct(newProdPayload);
-      // Replace temp ID with real ID from server
       setProducts(prev => prev.map(p => p.id === tempId ? createdProduct : p));
     } catch (error) {
       alert('Gagal menyimpan ke database sheet');
-      setProducts(prev => prev.filter(p => p.id !== tempId)); // Revert if failed
+      setProducts(prev => prev.filter(p => p.id !== tempId));
     }
   };
 
   const handleDelete = async (id: string) => {
     if(!confirm('Hapus produk ini?')) return;
-    
-    // Optimistic Delete
     const previousProducts = [...products];
     setProducts(prev => prev.filter(p => p.id !== id));
-    
     try {
       await api.deleteProduct(id);
     } catch (e) {
       alert("Gagal menghapus");
-      setProducts(previousProducts); // Revert
+      setProducts(previousProducts);
     }
   };
 
   const handleLocationSelect = (lat: string, long: string, name: string) => {
-    setFormData(prev => ({
-      ...prev,
-      lat_long: `${lat},${long}`,
-      address_name: name
-    }));
+    setFormData(prev => ({ ...prev, lat_long: `${lat},${long}`, address_name: name }));
+  };
+
+  const finishOrder = async (orderId: string, amount: number) => {
+    // Only Driver usually does this, but seller can mark done too if needed. 
+    // Here we just simulate Income for Seller when order is done (by driver usually)
+    // For this prototype, we'll assume the money is released when order is 'SELESAI'
   };
 
   return (
     <div>
-      <div className="flex gap-2 mb-6 sticky top-0 bg-gray-50 pt-2 z-10 pb-4 border-b">
+      <div className="flex gap-2 mb-4 sticky top-0 bg-gray-50 pt-2 z-10 pb-4 border-b">
         <button 
           onClick={() => setView('products')} 
           className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg font-medium transition-colors ${view === 'products' ? 'bg-white text-brand-green shadow-sm border border-green-200' : 'text-gray-500'}`}
         >
-          <Package size={18} /> Produk Saya
+          <Package size={18} /> Produk
         </button>
         <button 
           onClick={() => setView('orders')} 
           className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg font-medium transition-colors ${view === 'orders' ? 'bg-white text-brand-green shadow-sm border border-green-200' : 'text-gray-500'}`}
         >
-          <ShoppingBag size={18} /> Pesanan Masuk
+          <ShoppingBag size={18} /> Pesanan
           {orders.filter(o => o.status === 'PENDING').length > 0 && (
-            <span className="bg-red-500 text-white text-[10px] px-1.5 rounded-full">
+            <span className="bg-red-500 text-white text-[10px] px-1.5 rounded-full animate-pulse">
               {orders.filter(o => o.status === 'PENDING').length}
             </span>
           )}
         </button>
       </div>
+      
+      {/* Wallet for Income */}
+      <WalletCard userId={user.id} />
 
       {loading ? <LoadingSpinner /> : (
         <>
@@ -162,22 +173,42 @@ export const SellerDashboard: React.FC<SellerDashboardProps> = ({ user }) => {
 
           {view === 'orders' && (
             <div className="space-y-4">
+              <div className="flex justify-between items-center px-1">
+                <h3 className="font-bold text-gray-700">Daftar Pesanan</h3>
+                <button onClick={() => loadData()} className="text-brand-green flex items-center gap-1 text-xs font-bold"><RefreshCw size={12}/> Refresh</button>
+              </div>
+
               {orders.length === 0 ? <p className="text-center text-gray-500 mt-10">Belum ada pesanan masuk.</p> :
               orders.map(o => (
-                <div key={o.id} className="bg-white p-4 rounded-xl shadow-sm border border-gray-100">
+                <div key={o.id} className={`bg-white p-4 rounded-xl shadow-sm border ${o.status === 'PENDING' ? 'border-brand-yellow ring-1 ring-yellow-100' : 'border-gray-100'}`}>
                   <div className="flex justify-between mb-2">
-                    <span className="text-xs font-bold text-gray-500">Order #{o.id.toString().slice(-4)}</span>
+                    <div className="flex flex-col">
+                      <span className="text-xs font-bold text-gray-500">#{o.id.toString().slice(-4)}</span>
+                      <span className="text-[10px] text-gray-400">{new Date(o.created_at).toLocaleTimeString()}</span>
+                    </div>
                     <Badge status={o.status} />
                   </div>
-                  <div className="flex gap-3">
+                  <div className="flex gap-3 mb-2">
                     <div className="flex-1">
                       <h4 className="font-bold text-gray-800">{o.product_name}</h4>
                       <p className="text-sm text-gray-600">{o.jumlah} item • Rp {o.total_harga.toLocaleString()}</p>
                       <div className="mt-2 text-xs bg-gray-50 p-2 rounded">
                         <p><span className="font-semibold">Pembeli:</span> {o.buyer_name || o.buyer_id}</p>
-                        <p><span className="font-semibold">Driver:</span> {o.driver_id ? 'Sedang diantar' : 'Menunggu Driver'}</p>
+                        <p><span className="font-semibold">Alamat:</span> {o.alamat_pengiriman}</p>
+                        <p><span className="font-semibold">Status:</span> {o.driver_id ? 'Driver OTW' : 'Menunggu Driver'}</p>
                       </div>
                     </div>
+                  </div>
+                  
+                  <div className="flex justify-end pt-2 border-t border-gray-50">
+                     <Button 
+                      size="sm" 
+                      variant="secondary" 
+                      className="py-1 px-3 text-xs w-auto"
+                      onClick={() => setActiveChatOrder(o)}
+                     >
+                       <MessageCircle size={14} /> Hubungi Pembeli/Driver
+                     </Button>
                   </div>
                 </div>
               ))}
@@ -208,7 +239,6 @@ export const SellerDashboard: React.FC<SellerDashboardProps> = ({ user }) => {
                 onLocationSelect={handleLocationSelect}
               />
               <input type="hidden" required value={formData.lat_long} />
-              <div className="text-[10px] text-gray-400 mb-2">Koordinat terisi otomatis berdasarkan pencarian desa.</div>
               
               <div className="flex gap-3 mt-6">
                 <Button type="button" variant="outline" onClick={() => setShowAddModal(false)}>Batal</Button>
@@ -217,6 +247,16 @@ export const SellerDashboard: React.FC<SellerDashboardProps> = ({ user }) => {
             </form>
           </div>
         </div>
+      )}
+
+      {/* Chat Modal */}
+      {activeChatOrder && (
+          <ChatWindow 
+            orderId={activeChatOrder.id} 
+            currentUser={user} 
+            onClose={() => setActiveChatOrder(null)}
+            title={`Pesanan #${activeChatOrder.id.toString().slice(-4)} - ${activeChatOrder.buyer_name}`}
+          />
       )}
     </div>
   );
