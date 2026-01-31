@@ -3,6 +3,7 @@ import { User, Product, Order, CartItem, OrderStatus } from '../types';
 import { api, calculateDistance } from '../services/api';
 import { Button, Input, Badge, LoadingSpinner } from '../components/ui';
 import { ShoppingCart, MapPin, Search, Plus, Minus, X, Package } from 'lucide-react';
+import { LocationPicker } from '../components/LocationPicker';
 
 interface BuyerDashboardProps {
   user: User;
@@ -17,7 +18,7 @@ export const BuyerDashboard: React.FC<BuyerDashboardProps> = ({ user }) => {
   const [searchTerm, setSearchTerm] = useState('');
   
   // Checkout State
-  const [userLocation, setUserLocation] = useState<{lat: number, long: number} | null>(null);
+  const [userLocation, setUserLocation] = useState<{lat: number, long: number, address?: string} | null>(null);
   const [locating, setLocating] = useState(false);
   const [checkoutStep, setCheckoutStep] = useState<'review' | 'location' | 'confirm'>('review');
 
@@ -61,29 +62,37 @@ export const BuyerDashboard: React.FC<BuyerDashboardProps> = ({ user }) => {
 
   // --- Geolocation & Checkout Logic ---
 
-  const requestLocation = () => {
+  const requestGPSLocation = () => {
     setLocating(true);
     if ('geolocation' in navigator) {
       navigator.geolocation.getCurrentPosition(
         (position) => {
           setUserLocation({
             lat: position.coords.latitude,
-            long: position.coords.longitude
+            long: position.coords.longitude,
+            address: 'Lokasi GPS Saat Ini'
           });
           setLocating(false);
           setCheckoutStep('confirm');
         },
         (error) => {
-          alert('Gagal mengambil lokasi. Menggunakan lokasi default (Alun-Alun Majalengka).');
-          setUserLocation({ lat: -6.8365, long: 108.2285 });
+          alert('Gagal mengambil GPS. Silakan gunakan pencarian desa.');
           setLocating(false);
-          setCheckoutStep('confirm');
         }
       );
     } else {
       alert('Browser tidak support geolocation.');
       setLocating(false);
     }
+  };
+
+  const handleManualLocationSelect = (lat: string, long: string, displayName: string) => {
+     setUserLocation({
+       lat: parseFloat(lat),
+       long: parseFloat(long),
+       address: displayName
+     });
+     setCheckoutStep('confirm');
   };
 
   const calculateCartTotals = () => {
@@ -101,16 +110,16 @@ export const BuyerDashboard: React.FC<BuyerDashboardProps> = ({ user }) => {
     const finalGroups = Object.keys(groups).map(sellerId => {
       const group = groups[sellerId];
       // Parse Origin (Seller)
-      const [sLat, sLong] = group.originLatLong.split(',').map(Number);
-      
       let distance = 0;
       let shippingCost = 0;
 
-      if (userLocation) {
-        distance = calculateDistance(sLat, sLong, userLocation.lat, userLocation.long);
-        shippingCost = Math.ceil(distance * api.getRate());
-        // Minimum shipping 5000
-        if (shippingCost < 5000) shippingCost = 5000;
+      if (userLocation && group.originLatLong) {
+        const [sLat, sLong] = group.originLatLong.split(',').map(Number);
+        if(!isNaN(sLat) && !isNaN(sLong)) {
+            distance = calculateDistance(sLat, sLong, userLocation.lat, userLocation.long);
+            shippingCost = Math.ceil(distance * api.getRate());
+            if (shippingCost < 5000) shippingCost = 5000;
+        }
       }
 
       const itemsTotal = group.items.reduce((sum, item) => sum + (item.harga * item.qty), 0);
@@ -140,21 +149,7 @@ export const BuyerDashboard: React.FC<BuyerDashboardProps> = ({ user }) => {
 
     for (const group of groups) {
       for (const item of group.items) {
-        // Distribute shipping cost per item? No, usually per order/shipment.
-        // For simplicity in this flat data structure, we'll assign the full shipping cost 
-        // to the FIRST item of the seller, and 0 for the rest, OR split it.
-        // Let's split strictly for the data record, but UX shows it grouped.
-        // Actually, safer to create one record per item, but the prompt implies "Orders" table structure.
-        // Let's say Total Ongkir is stored on each item record proportional to qty or just repeated for reference.
-        // Simplification: We store the full calculated Shipping on the order record.
-        
-        // Wait, if I buy 2 items from Seller A, do I get 2 rows in Orders?
-        // Yes, "product_id" is singular in Tab Orders.
-        // So we need to flag them as part of same shipment or just divide cost.
-        // Strategy: Divide shipping cost by number of items from that seller to store in DB
-        // so sum(total_ongkir) matches user expectation.
-        
-        const shippingPerItem = Math.floor(group.shippingCost / group.items.length); // Rough split
+        const shippingPerItem = Math.floor(group.shippingCost / group.items.length);
         
         orderPayloads.push({
           buyer_id: user.id,
@@ -167,7 +162,7 @@ export const BuyerDashboard: React.FC<BuyerDashboardProps> = ({ user }) => {
           jarak_km: group.distance,
           total_ongkir: shippingPerItem,
           total_harga: (item.harga * item.qty) + shippingPerItem,
-          alamat_pengiriman: `${userLocation.lat.toFixed(5)}, ${userLocation.long.toFixed(5)}`,
+          alamat_pengiriman: userLocation.address || `${userLocation.lat.toFixed(5)}, ${userLocation.long.toFixed(5)}`,
           lat_long_pengiriman: `${userLocation.lat},${userLocation.long}`
         });
       }
@@ -266,14 +261,35 @@ export const BuyerDashboard: React.FC<BuyerDashboardProps> = ({ user }) => {
                 )}
 
                 {checkoutStep === 'location' && (
-                  <div className="text-center mt-10 px-6">
-                    <div className="bg-white p-6 rounded-2xl shadow-lg">
-                      <MapPin size={48} className="mx-auto text-brand-green mb-4" />
-                      <h3 className="text-xl font-bold mb-2">Dimana lokasimu?</h3>
-                      <p className="text-gray-500 text-sm mb-6">Kami perlu lokasi kamu untuk menghitung jarak dan biaya ongkir Jastip dari setiap penjual.</p>
-                      <Button onClick={requestLocation} disabled={locating}>
-                        {locating ? 'Mencari Lokasi...' : 'Gunakan Lokasi Saat Ini'}
+                  <div className="text-center mt-4 px-2">
+                    <div className="bg-white p-6 rounded-2xl shadow-lg space-y-6">
+                      <MapPin size={48} className="mx-auto text-brand-green" />
+                      <div>
+                        <h3 className="text-xl font-bold mb-2">Mau diantar kemana?</h3>
+                        <p className="text-gray-500 text-sm">Pilih lokasi agar kami bisa menghitung ongkir jastip.</p>
+                      </div>
+                      
+                      {/* Option 1: Search */}
+                      <div className="text-left">
+                        <LocationPicker 
+                          label="Cari Nama Desa / Kelurahan / Kecamatan" 
+                          onLocationSelect={handleManualLocationSelect}
+                          placeholder="Contoh: Majalengka Kulon"
+                        />
+                      </div>
+
+                      <div className="relative flex py-1 items-center">
+                        <div className="flex-grow border-t border-gray-200"></div>
+                        <span className="flex-shrink-0 mx-4 text-gray-400 text-xs">ATAU</span>
+                        <div className="flex-grow border-t border-gray-200"></div>
+                      </div>
+
+                      {/* Option 2: GPS */}
+                      <Button variant="outline" onClick={requestGPSLocation} disabled={locating} className="py-4">
+                         {locating ? 'Mencari...' : 'Gunakan GPS Lokasi Saya'}
                       </Button>
+                      
+                      <button onClick={() => setCheckoutStep('review')} className="text-sm text-gray-400 mt-4 underline">Kembali</button>
                     </div>
                   </div>
                 )}
@@ -281,11 +297,21 @@ export const BuyerDashboard: React.FC<BuyerDashboardProps> = ({ user }) => {
                 {checkoutStep === 'confirm' && userLocation && (
                   <div className="space-y-6 pb-24">
                     <h2 className="font-bold text-lg">Konfirmasi Pesanan</h2>
+                    
+                    <div className="bg-green-50 p-3 rounded-lg flex items-start gap-3 border border-green-200">
+                       <MapPin className="text-green-600 mt-1" size={18} />
+                       <div>
+                         <p className="text-xs text-green-800 font-bold">Alamat Pengantaran:</p>
+                         <p className="text-sm text-green-900">{userLocation.address}</p>
+                       </div>
+                       <button onClick={() => setCheckoutStep('location')} className="text-xs text-green-600 underline ml-auto">Ubah</button>
+                    </div>
+
                     {calculateCartTotals().groups.map(group => (
                       <div key={group.sellerId} className="bg-white p-4 rounded-xl shadow-sm border border-green-100">
                         <div className="flex justify-between items-center border-b pb-2 mb-2">
                           <span className="font-bold text-sm text-gray-700">{group.sellerName}</span>
-                          <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">{group.distance} km</span>
+                          <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">{group.distance.toFixed(1)} km</span>
                         </div>
                         {group.items.map(item => (
                           <div key={item.id} className="flex justify-between text-sm mb-1 text-gray-600">

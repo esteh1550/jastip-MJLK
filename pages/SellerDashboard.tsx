@@ -3,6 +3,7 @@ import { User, Product, Order } from '../types';
 import { api } from '../services/api';
 import { Button, Input, Badge, LoadingSpinner } from '../components/ui';
 import { Plus, Trash, Edit, Package, ShoppingBag } from 'lucide-react';
+import { LocationPicker } from '../components/LocationPicker';
 
 interface SellerDashboardProps {
   user: User;
@@ -17,15 +18,22 @@ export const SellerDashboard: React.FC<SellerDashboardProps> = ({ user }) => {
 
   // Form State
   const [formData, setFormData] = useState({
-    nama: '', deskripsi: '', harga: '', stok: '', gambar_url: 'https://picsum.photos/300/300', lat_long: '-6.838328,108.230756'
+    nama: '', deskripsi: '', harga: '', stok: '', gambar_url: 'https://picsum.photos/300/300', lat_long: '', address_name: ''
   });
 
   const loadData = async () => {
-    setLoading(true);
-    const [allProds, allOrders] = await Promise.all([api.getProducts(), api.getOrders()]);
-    setProducts(allProds.filter(p => p.seller_id === user.id));
-    setOrders(allOrders.filter(o => o.seller_id === user.id));
-    setLoading(false);
+    // Only set loading on initial fetch
+    if(products.length === 0) setLoading(true);
+    
+    try {
+      const [allProds, allOrders] = await Promise.all([api.getProducts(), api.getOrders()]);
+      setProducts(allProds.filter(p => p.seller_id === user.id));
+      setOrders(allOrders.filter(o => o.seller_id === user.id));
+    } catch (e) {
+      console.error("Failed to load data", e);
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -34,7 +42,13 @@ export const SellerDashboard: React.FC<SellerDashboardProps> = ({ user }) => {
 
   const handleAddProduct = async (e: React.FormEvent) => {
     e.preventDefault();
-    const newProd = {
+    if (!formData.lat_long) {
+      alert("Mohon pilih lokasi desa/kecamatan produk.");
+      return;
+    }
+
+    const tempId = `temp-${Date.now()}`;
+    const newProdPayload = {
       seller_id: user.id,
       seller_name: user.nama_lengkap,
       nama: formData.nama,
@@ -42,21 +56,52 @@ export const SellerDashboard: React.FC<SellerDashboardProps> = ({ user }) => {
       harga: Number(formData.harga),
       stok: Number(formData.stok),
       gambar_url: formData.gambar_url,
-      lat_long: formData.lat_long
+      lat_long: formData.lat_long,
+    };
+
+    // 1. Optimistic Update (Immediate UI Change)
+    const optimisticProd: Product = {
+      ...newProdPayload,
+      id: tempId,
+      created_at: new Date().toISOString()
     };
     
-    // Optimistic
-    setLoading(true);
-    await api.addProduct(newProd);
+    setProducts(prev => [...prev, optimisticProd]);
     setShowAddModal(false);
-    setFormData({ nama: '', deskripsi: '', harga: '', stok: '', gambar_url: 'https://picsum.photos/300/300', lat_long: '-6.838328,108.230756' });
-    loadData();
+    setFormData({ nama: '', deskripsi: '', harga: '', stok: '', gambar_url: 'https://picsum.photos/300/300', lat_long: '', address_name: '' });
+
+    // 2. Actual API Call
+    try {
+      const createdProduct = await api.addProduct(newProdPayload);
+      // Replace temp ID with real ID from server
+      setProducts(prev => prev.map(p => p.id === tempId ? createdProduct : p));
+    } catch (error) {
+      alert('Gagal menyimpan ke database sheet');
+      setProducts(prev => prev.filter(p => p.id !== tempId)); // Revert if failed
+    }
   };
 
   const handleDelete = async (id: string) => {
     if(!confirm('Hapus produk ini?')) return;
+    
+    // Optimistic Delete
+    const previousProducts = [...products];
     setProducts(prev => prev.filter(p => p.id !== id));
-    await api.deleteProduct(id);
+    
+    try {
+      await api.deleteProduct(id);
+    } catch (e) {
+      alert("Gagal menghapus");
+      setProducts(previousProducts); // Revert
+    }
+  };
+
+  const handleLocationSelect = (lat: string, long: string, name: string) => {
+    setFormData(prev => ({
+      ...prev,
+      lat_long: `${lat},${long}`,
+      address_name: name
+    }));
   };
 
   return (
@@ -86,6 +131,7 @@ export const SellerDashboard: React.FC<SellerDashboardProps> = ({ user }) => {
           {view === 'products' && (
             <>
               <div className="grid gap-4">
+                {products.length === 0 && <p className="text-gray-400 text-center py-10">Belum ada produk. Tambahkan sekarang!</p>}
                 {products.map(p => (
                   <div key={p.id} className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex gap-4">
                     <img src={p.gambar_url} alt={p.nama} className="w-20 h-20 object-cover rounded-lg bg-gray-100" />
@@ -101,7 +147,7 @@ export const SellerDashboard: React.FC<SellerDashboardProps> = ({ user }) => {
                           <p className="text-xs text-gray-400">Stok: {p.stok}</p>
                         </div>
                         <div className="text-[10px] text-gray-400 font-mono bg-gray-100 px-1 rounded">
-                           {p.lat_long.split(',').map(c => Number(c).toFixed(3)).join(',')}
+                           {p.lat_long ? p.lat_long.split(',').map(c => Number(c).toFixed(3)).join(',') : 'No Loc'}
                         </div>
                       </div>
                     </div>
@@ -120,7 +166,7 @@ export const SellerDashboard: React.FC<SellerDashboardProps> = ({ user }) => {
               orders.map(o => (
                 <div key={o.id} className="bg-white p-4 rounded-xl shadow-sm border border-gray-100">
                   <div className="flex justify-between mb-2">
-                    <span className="text-xs font-bold text-gray-500">Order #{o.id.slice(-4)}</span>
+                    <span className="text-xs font-bold text-gray-500">Order #{o.id.toString().slice(-4)}</span>
                     <Badge status={o.status} />
                   </div>
                   <div className="flex gap-3">
@@ -155,8 +201,14 @@ export const SellerDashboard: React.FC<SellerDashboardProps> = ({ user }) => {
                 <Input required type="number" label="Harga" value={formData.harga} onChange={e => setFormData({...formData, harga: e.target.value})} />
                 <Input required type="number" label="Stok" value={formData.stok} onChange={e => setFormData({...formData, stok: e.target.value})} />
               </div>
-              <Input required label="Koordinat (Lat, Long)" placeholder="-6.xxx, 108.xxx" value={formData.lat_long} onChange={e => setFormData({...formData, lat_long: e.target.value})} />
-              <div className="text-xs text-gray-500 mb-2">Gunakan Google Maps untuk copy koordinat toko/rumah Anda.</div>
+              
+              <LocationPicker 
+                label="Lokasi Produk (Cari Desa/Kecamatan)"
+                placeholder="Misal: Jatiwangi, Majalengka"
+                onLocationSelect={handleLocationSelect}
+              />
+              <input type="hidden" required value={formData.lat_long} />
+              <div className="text-[10px] text-gray-400 mb-2">Koordinat terisi otomatis berdasarkan pencarian desa.</div>
               
               <div className="flex gap-3 mt-6">
                 <Button type="button" variant="outline" onClick={() => setShowAddModal(false)}>Batal</Button>
