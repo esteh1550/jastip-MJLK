@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { User, Order, OrderStatus } from '../types';
 import { api } from '../services/api';
 import { Badge, Button, LoadingSpinner } from '../components/ui';
-import { MapPin, Navigation, CheckCircle, Package, MessageCircle } from 'lucide-react';
+import { MapPin, Navigation, CheckCircle, Package, MessageCircle, Truck } from 'lucide-react';
 import { ChatWindow } from '../components/ChatWindow';
 import { WalletCard } from '../components/WalletCard';
 
@@ -25,34 +25,38 @@ export const DriverDashboard: React.FC<DriverDashboardProps> = ({ user }) => {
 
   useEffect(() => {
     fetchOrders();
-    // Refresh for available orders
-    const interval = setInterval(() => {
-        api.getOrders().then(setOrders);
-    }, 20000);
+    const interval = setInterval(() => { api.getOrders().then(setOrders); }, 15000);
     return () => clearInterval(interval);
   }, []);
 
   const handleTakeOrder = async (orderId: string) => {
-    if(!confirm('Ambil pesanan ini?')) return;
-    setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: OrderStatus.DIKIRIM, driver_id: user.id } : o));
-    await api.updateOrderStatus(orderId, OrderStatus.DIKIRIM, user.id);
+    if(!confirm('Ambil pesanan ini? Segera menuju lokasi penjual.')) return;
+    await api.updateOrderStatus(orderId, OrderStatus.DRIVER_OTW_PICKUP, user.id, user.nama_lengkap);
+    fetchOrders();
+    setActiveTab('active');
   };
 
   const handleFinishOrder = async (order: Order) => {
-    if(!confirm('Selesaikan pesanan dan terima ongkir?')) return;
-    setOrders(prev => prev.map(o => o.id === order.id ? { ...o, status: OrderStatus.SELESAI } : o));
+    if(!confirm('Pastikan pesanan sudah diterima pembeli. Selesaikan?')) return;
     
     await api.updateOrderStatus(order.id, OrderStatus.SELESAI);
     
-    // Release money: Driver gets Ongkir, Seller gets Price
+    // Transfer funds Logic (Dual safeguard: if Buyer hasn't confirmed yet)
+    // In strict transactional systems, usually funds are held. Here we release.
     await api.addTransaction(user.id, 'INCOME', order.total_ongkir, `Ongkir Order #${order.id}`);
     await api.addTransaction(order.seller_id, 'INCOME', order.total_harga - order.total_ongkir, `Penjualan Order #${order.id}`);
     
     alert('Order selesai! Saldo ongkir masuk ke dompet.');
+    fetchOrders();
   };
 
-  const availableOrders = orders.filter(o => o.status === OrderStatus.PENDING);
-  const myActiveOrders = orders.filter(o => o.status === OrderStatus.DIKIRIM && o.driver_id === user.id);
+  // Logic Filters
+  // Available: Status is CONFIRMED (Accepted by Seller) AND no driver yet
+  const availableOrders = orders.filter(o => o.status === OrderStatus.CONFIRMED && !o.driver_id);
+  
+  // Active: Status OTW or DIKIRIM, assigned to me
+  const myActiveOrders = orders.filter(o => (o.status === OrderStatus.DRIVER_OTW_PICKUP || o.status === OrderStatus.DIKIRIM) && o.driver_id === user.id);
+  
   const myHistoryOrders = orders.filter(o => o.status === OrderStatus.SELESAI && o.driver_id === user.id);
 
   const OrderCard = ({ order, actionBtn }: { order: Order, actionBtn?: React.ReactNode }) => (
@@ -67,6 +71,7 @@ export const DriverDashboard: React.FC<DriverDashboardProps> = ({ user }) => {
         <div>
           <h3 className="font-bold text-gray-800">{order.product_name}</h3>
           <p className="text-sm text-gray-600">{order.jumlah}x</p>
+          {order.catatan && <p className="text-xs italic bg-yellow-50 p-1 rounded mt-1">Note: {order.catatan}</p>}
         </div>
       </div>
 
@@ -94,9 +99,9 @@ export const DriverDashboard: React.FC<DriverDashboardProps> = ({ user }) => {
             <span className="font-bold text-brand-green">Rp {order.total_ongkir.toLocaleString()}</span>
          </div>
          <div className="flex gap-2">
-            {(order.status === OrderStatus.DIKIRIM || order.status === OrderStatus.PENDING) && (
-                 <Button size="sm" variant="outline" className="w-auto py-1 px-2" onClick={() => setActiveChatOrder(order)}>
-                    <MessageCircle size={16} />
+            {(order.status === OrderStatus.DRIVER_OTW_PICKUP || order.status === OrderStatus.DIKIRIM) && (
+                 <Button size="sm" variant="secondary" className="w-auto py-1 px-2" onClick={() => setActiveChatOrder(order)}>
+                    <MessageCircle size={16} /> Chat
                  </Button>
             )}
             {actionBtn}
@@ -107,82 +112,43 @@ export const DriverDashboard: React.FC<DriverDashboardProps> = ({ user }) => {
 
   return (
     <div>
-      <div className="mb-4">
-        <WalletCard user={user} />
-      </div>
+      <div className="mb-4"><WalletCard user={user} /></div>
 
-      {/* Tabs */}
       <div className="flex gap-2 mb-6 bg-white p-1 rounded-xl border border-gray-200 sticky top-0 z-10">
-        <button 
-          onClick={() => setActiveTab('available')}
-          className={`flex-1 py-2 text-sm font-medium rounded-lg transition-colors ${activeTab === 'available' ? 'bg-brand-green text-white' : 'text-gray-600'}`}
-        >
-          Pending ({availableOrders.length})
-        </button>
-        <button 
-          onClick={() => setActiveTab('active')}
-          className={`flex-1 py-2 text-sm font-medium rounded-lg transition-colors ${activeTab === 'active' ? 'bg-brand-green text-white' : 'text-gray-600'}`}
-        >
-          Aktif ({myActiveOrders.length})
-        </button>
-        <button 
-          onClick={() => setActiveTab('history')}
-          className={`flex-1 py-2 text-sm font-medium rounded-lg transition-colors ${activeTab === 'history' ? 'bg-brand-green text-white' : 'text-gray-600'}`}
-        >
-          Selesai
-        </button>
+        <button onClick={() => setActiveTab('available')} className={`flex-1 py-2 text-sm font-medium rounded-lg ${activeTab === 'available' ? 'bg-brand-green text-white' : 'text-gray-600'}`}>Tersedia ({availableOrders.length})</button>
+        <button onClick={() => setActiveTab('active')} className={`flex-1 py-2 text-sm font-medium rounded-lg ${activeTab === 'active' ? 'bg-brand-green text-white' : 'text-gray-600'}`}>Aktif ({myActiveOrders.length})</button>
+        <button onClick={() => setActiveTab('history')} className={`flex-1 py-2 text-sm font-medium rounded-lg ${activeTab === 'history' ? 'bg-brand-green text-white' : 'text-gray-600'}`}>Selesai</button>
       </div>
 
       {loading ? <LoadingSpinner /> : (
         <div className="space-y-4">
           {activeTab === 'available' && (
-            availableOrders.length === 0 ? <p className="text-center text-gray-500 mt-10">Tidak ada orderan baru.</p> :
+            availableOrders.length === 0 ? <p className="text-center text-gray-500 mt-10">Tidak ada orderan siap ambil.</p> :
             availableOrders.map(order => (
-              <OrderCard 
-                key={order.id} 
-                order={order} 
-                actionBtn={
-                  <Button size="sm" className="w-auto py-1 px-4 text-sm" onClick={() => handleTakeOrder(order.id)}>
-                    <Navigation size={14} /> Ambil
-                  </Button>
-                } 
+              <OrderCard key={order.id} order={order} 
+                actionBtn={<Button size="sm" className="w-auto py-1 px-4 text-sm" onClick={() => handleTakeOrder(order.id)}><Navigation size={14} /> Ambil</Button>} 
               />
             ))
           )}
 
           {activeTab === 'active' && (
-             myActiveOrders.length === 0 ? <p className="text-center text-gray-500 mt-10">Belum ada orderan yang diambil.</p> :
+             myActiveOrders.length === 0 ? <p className="text-center text-gray-500 mt-10">Tidak ada orderan aktif.</p> :
              myActiveOrders.map(order => (
-              <OrderCard 
-                key={order.id} 
-                order={order} 
+              <OrderCard key={order.id} order={order} 
                 actionBtn={
-                  <Button size="sm" variant="secondary" className="w-auto py-1 px-4 text-sm" onClick={() => handleFinishOrder(order)}>
-                    <CheckCircle size={14} /> Selesaikan
-                  </Button>
+                    order.status === OrderStatus.DRIVER_OTW_PICKUP ? 
+                    <span className="text-xs text-orange-500 font-bold bg-orange-100 px-2 py-1 rounded">Menuju Penjual</span> :
+                    <Button size="sm" className="w-auto py-1 px-4 text-sm bg-blue-600" onClick={() => handleFinishOrder(order)}><CheckCircle size={14} /> Selesaikan</Button>
                 } 
               />
             ))
           )}
 
-          {activeTab === 'history' && (
-            myHistoryOrders.length === 0 ? <p className="text-center text-gray-500 mt-10">Belum ada riwayat.</p> :
-            myHistoryOrders.map(order => (
-              <OrderCard key={order.id} order={order} />
-            ))
-          )}
+          {activeTab === 'history' && myHistoryOrders.map(order => <OrderCard key={order.id} order={order} />)}
         </div>
       )}
 
-      {/* Chat Modal */}
-      {activeChatOrder && (
-          <ChatWindow 
-            orderId={activeChatOrder.id} 
-            currentUser={user} 
-            onClose={() => setActiveChatOrder(null)}
-            title={`Order #${activeChatOrder.id.toString().slice(-4)}`}
-          />
-      )}
+      {activeChatOrder && <ChatWindow orderId={`${activeChatOrder.id}-driver`} currentUser={user} onClose={() => setActiveChatOrder(null)} title={`Chat Pembeli: ${activeChatOrder.buyer_name}`} />}
     </div>
   );
 };

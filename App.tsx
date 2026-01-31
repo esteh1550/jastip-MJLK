@@ -4,6 +4,7 @@ import { Auth } from './pages/Auth';
 import { BuyerDashboard } from './pages/BuyerDashboard';
 import { SellerDashboard } from './pages/SellerDashboard';
 import { DriverDashboard } from './pages/DriverDashboard';
+import { AdminDashboard } from './pages/AdminDashboard';
 import { User, UserRole } from './types';
 
 const App = () => {
@@ -46,6 +47,10 @@ const App = () => {
     case UserRole.DRIVER:
       DashboardComponent = <DriverDashboard user={user} />;
       title = "Driver Area";
+      break;
+    case UserRole.ADMIN:
+      DashboardComponent = <AdminDashboard user={user} />;
+      title = "Admin Panel";
       break;
     default:
       DashboardComponent = <div>Role tidak dikenali</div>;

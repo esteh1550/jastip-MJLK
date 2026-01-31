@@ -2,13 +2,16 @@
 export enum UserRole {
   SELLER = 'SELLER',
   BUYER = 'BUYER',
-  DRIVER = 'DRIVER'
+  DRIVER = 'DRIVER',
+  ADMIN = 'ADMIN'
 }
 
 export enum OrderStatus {
-  PENDING = 'PENDING',
-  DIKIRIM = 'DIKIRIM',
-  SELESAI = 'SELESAI'
+  PENDING = 'PENDING',              // Menunggu Konfirmasi Penjual
+  CONFIRMED = 'CONFIRMED',          // Penjual Menerima, Menunggu Driver
+  DRIVER_OTW_PICKUP = 'DRIVER_OTW', // Driver Menuju Penjual
+  DIKIRIM = 'DIKIRIM',              // Penjual menyerahkan ke Driver, OTW Pembeli
+  SELESAI = 'SELESAI'               // Diterima Pembeli
 }
 
 export interface User {
@@ -18,8 +21,8 @@ export interface User {
   role: UserRole;
   nama_lengkap: string;
   saldo?: number;
-  nomor_whatsapp?: string; // New: Nomor WA
-  verified?: string; // New: "Y" or "N"
+  nomor_whatsapp?: string;
+  verified?: string; // "Y" or "N"
 }
 
 export interface Product {
@@ -55,10 +58,12 @@ export interface Order {
   buyer_name: string;
   seller_id: string;
   driver_id?: string;
+  driver_name?: string;
   product_id: string;
   product_name: string;
   product_img: string;
   jumlah: number;
+  catatan?: string; // New: Catatan Pesanan
   zona_ongkir?: string; 
   jarak_km: number;
   total_ongkir: number;
@@ -72,6 +77,7 @@ export interface Order {
 
 export interface CartItem extends Product {
   qty: number;
+  note?: string; // Note per item in cart
 }
 
 export interface Transaction {
@@ -85,7 +91,7 @@ export interface Transaction {
 
 export interface Message {
   id: string;
-  order_id: string;
+  order_id: string; // Can use suffixes like "-driver" for separate channels
   sender_id: string;
   sender_name: string;
   content: string;
