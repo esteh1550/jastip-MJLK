@@ -27,7 +27,7 @@ export const Input: React.FC<React.InputHTMLAttributes<HTMLInputElement> & { lab
   <div className="mb-3">
     {label && <label className="block text-sm font-medium text-gray-700 mb-1">{label}</label>}
     <input
-      className={`w-full p-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-brand-green focus:border-brand-green outline-none transition-all ${className}`}
+      className={`w-full p-3 rounded-lg border border-gray-300 text-gray-900 placeholder:text-gray-400 focus:ring-2 focus:ring-brand-green focus:border-brand-green outline-none transition-all ${className}`}
       {...props}
     />
   </div>

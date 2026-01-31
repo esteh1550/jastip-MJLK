@@ -17,7 +17,9 @@ export interface User {
   password?: string;
   role: UserRole;
   nama_lengkap: string;
-  saldo?: number; // Kolom baru di database sheet users
+  saldo?: number;
+  nomor_whatsapp?: string; // New: Nomor WA
+  verified?: string; // New: "Y" or "N"
 }
 
 export interface Product {
@@ -29,7 +31,20 @@ export interface Product {
   harga: number;
   stok: number;
   gambar_url: string;
-  lat_long: string; // Format: "-6.8365,108.2285"
+  lat_long: string;
+  created_at: string;
+  average_rating?: number;
+  total_reviews?: number;
+}
+
+export interface Review {
+  id: string;
+  product_id: string;
+  order_id: string;
+  user_id: string;
+  user_name: string;
+  rating: number; // 1-5
+  comment: string;
   created_at: string;
 }
 
@@ -51,6 +66,7 @@ export interface Order {
   alamat_pengiriman: string; 
   lat_long_pengiriman: string;
   created_at: string;
+  is_reviewed?: boolean;
 }
 
 export interface CartItem extends Product {

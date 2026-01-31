@@ -16,6 +16,7 @@ export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [fullName, setFullName] = useState('');
+  const [whatsapp, setWhatsapp] = useState('');
   const [role, setRole] = useState<UserRole>(UserRole.BUYER);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -36,6 +37,7 @@ export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
           username,
           password,
           nama_lengkap: fullName,
+          nomor_whatsapp: whatsapp,
           role
         });
         onLogin(newUser);
@@ -51,7 +53,7 @@ export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
     <div className="min-h-screen flex flex-col items-center justify-center p-6 bg-gradient-to-br from-green-50 to-yellow-50">
       <div className="w-full max-w-sm bg-white p-8 rounded-3xl shadow-xl">
         <div className="text-center mb-8">
-          <h1 className="text-3xl font-extrabold text-brand-green mb-2">Jastip<span className="text-brand-yellow">Maja</span></h1>
+          <h1 className="text-3xl font-extrabold text-brand-green mb-2">JASTIP <span className="text-brand-yellow">MJLK</span></h1>
           <p className="text-gray-500">Platform Jastip UMKM Majalengka</p>
         </div>
 
@@ -78,6 +80,13 @@ export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
                 placeholder="Nama Lengkap" 
                 value={fullName} 
                 onChange={(e) => setFullName(e.target.value)} 
+                required 
+              />
+              <Input 
+                type="tel"
+                placeholder="Nomor WhatsApp (Contoh: 08123xxx)" 
+                value={whatsapp} 
+                onChange={(e) => setWhatsapp(e.target.value)} 
                 required 
               />
               <div className="mb-2">

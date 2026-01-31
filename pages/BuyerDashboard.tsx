@@ -2,10 +2,12 @@ import React, { useState, useEffect } from 'react';
 import { User, Product, Order, CartItem, OrderStatus } from '../types';
 import { api, calculateDistance } from '../services/api';
 import { Button, Input, Badge, LoadingSpinner } from '../components/ui';
-import { ShoppingCart, MapPin, Search, Plus, Minus, X, Package, MessageCircle, CheckCircle } from 'lucide-react';
+import { ShoppingCart, MapPin, Search, Plus, Minus, X, Package, MessageCircle, CheckCircle, Wallet, Filter, Star, Store, ShoppingBag } from 'lucide-react';
 import { LocationPicker } from '../components/LocationPicker';
 import { WalletCard } from '../components/WalletCard';
 import { ChatWindow } from '../components/ChatWindow';
+import { TransactionHistory } from '../components/TransactionHistory';
+import { StarRating } from '../components/StarRating';
 
 interface BuyerDashboardProps {
   user: User;
@@ -15,18 +17,34 @@ export const BuyerDashboard: React.FC<BuyerDashboardProps> = ({ user }) => {
   const [products, setProducts] = useState<Product[]>([]);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
-  const [view, setView] = useState<'browse' | 'cart' | 'orders'>('browse');
+  const [view, setView] = useState<'browse' | 'cart' | 'orders' | 'transactions'>('browse');
   const [loading, setLoading] = useState(true);
-  const [searchTerm, setSearchTerm] = useState('');
   
+  // Filters
+  const [searchTerm, setSearchTerm] = useState('');
+  const [showFilter, setShowFilter] = useState(false);
+  const [minPrice, setMinPrice] = useState('');
+  const [maxPrice, setMaxPrice] = useState('');
+  const [filterRating, setFilterRating] = useState(0);
+  const [filterSellerName, setFilterSellerName] = useState('');
+
+  // Orders Filter
+  const [orderStatusFilter, setOrderStatusFilter] = useState<'ALL' | OrderStatus>('ALL');
+
   // Checkout & Wallet State
   const [userLocation, setUserLocation] = useState<{lat: number, long: number, address?: string} | null>(null);
   const [locating, setLocating] = useState(false);
   const [checkoutStep, setCheckoutStep] = useState<'review' | 'location' | 'confirm' | 'success'>('review');
   const [walletBalance, setWalletBalance] = useState(0);
   
-  // Chat State
+  // Chat & Review State
   const [activeChatOrder, setActiveChatOrder] = useState<Order | null>(null);
+  const [reviewOrder, setReviewOrder] = useState<Order | null>(null);
+  const [reviewRating, setReviewRating] = useState(5);
+  const [reviewComment, setReviewComment] = useState('');
+
+  // UI Feedback
+  const [addedToCartId, setAddedToCartId] = useState<string | null>(null);
 
   useEffect(() => {
     loadProducts();
@@ -53,6 +71,10 @@ export const BuyerDashboard: React.FC<BuyerDashboardProps> = ({ user }) => {
       }
       return [...prev, { ...product, qty: 1 }];
     });
+    
+    // UI Feedback
+    setAddedToCartId(product.id);
+    setTimeout(() => setAddedToCartId(null), 1000);
   };
 
   const updateQty = (id: string, delta: number) => {
@@ -65,6 +87,41 @@ export const BuyerDashboard: React.FC<BuyerDashboardProps> = ({ user }) => {
   const removeFromCart = (id: string) => {
     setCart(prev => prev.filter(p => p.id !== id));
   };
+
+  const submitReview = async () => {
+    if(!reviewOrder) return;
+    setLoading(true);
+    await api.addReview({
+        product_id: reviewOrder.product_id,
+        order_id: reviewOrder.id,
+        user_id: user.id,
+        user_name: user.nama_lengkap,
+        rating: reviewRating,
+        comment: reviewComment
+    });
+    setReviewOrder(null);
+    setReviewComment('');
+    setReviewRating(5);
+    await loadOrders(); // Update "is_reviewed" status
+    await loadProducts(); // Update product rating display
+    setLoading(false);
+  };
+
+  // --- Filter Logic ---
+  const filteredProducts = products.filter(p => {
+    const matchesSearch = p.nama.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesSeller = filterSellerName ? p.seller_name.toLowerCase().includes(filterSellerName.toLowerCase()) : true;
+    const price = p.harga;
+    const matchesMin = minPrice ? price >= Number(minPrice) : true;
+    const matchesMax = maxPrice ? price <= Number(maxPrice) : true;
+    const matchesRating = filterRating > 0 ? (p.average_rating || 0) >= filterRating : true;
+
+    return matchesSearch && matchesSeller && matchesMin && matchesMax && matchesRating;
+  });
+
+  const filteredOrders = orderStatusFilter === 'ALL' 
+    ? orders 
+    : orders.filter(o => o.status === orderStatusFilter);
 
   // --- Geolocation & Checkout Logic ---
 
@@ -123,7 +180,9 @@ export const BuyerDashboard: React.FC<BuyerDashboardProps> = ({ user }) => {
         const [sLat, sLong] = group.originLatLong.split(',').map(Number);
         if(!isNaN(sLat) && !isNaN(sLong)) {
             distance = calculateDistance(sLat, sLong, userLocation.lat, userLocation.long);
+            // Dynamic Pricing Logic: Distance * Rate
             shippingCost = Math.ceil(distance * api.getRate());
+            // Minimum Ongkir Logic
             if (shippingCost < 5000) shippingCost = 5000;
         }
       }
@@ -162,6 +221,7 @@ export const BuyerDashboard: React.FC<BuyerDashboardProps> = ({ user }) => {
     // 1. Create Orders
     for (const group of groups) {
       for (const item of group.items) {
+        // Distribute shipping cost per item
         const shippingPerItem = Math.floor(group.shippingCost / group.items.length);
         
         orderPayloads.push({
@@ -187,16 +247,14 @@ export const BuyerDashboard: React.FC<BuyerDashboardProps> = ({ user }) => {
     await api.addTransaction(user.id, 'PAYMENT', grandTotal, `Pembayaran Order Jastip (${orderPayloads.length} item)`);
 
     setCart([]);
-    setCheckoutStep('success'); // New Success Step
+    setCheckoutStep('success');
     setUserLocation(null);
     setLoading(false);
     loadOrders();
-    setWalletBalance(prev => prev - grandTotal); // Optimistic update
+    setWalletBalance(prev => prev - grandTotal);
   };
 
   // --- Renders ---
-
-  const filteredProducts = products.filter(p => p.nama.toLowerCase().includes(searchTerm.toLowerCase()));
 
   return (
     <div className="pb-20">
@@ -204,43 +262,110 @@ export const BuyerDashboard: React.FC<BuyerDashboardProps> = ({ user }) => {
       {view === 'browse' && (
         <>
           <div className="bg-gray-50 p-4 pb-2">
-             <WalletCard userId={user.id} onBalanceChange={setWalletBalance} />
+             <WalletCard user={user} onBalanceChange={setWalletBalance} />
           </div>
-          <div className="sticky top-0 bg-gray-50 pt-0 px-4 z-20 pb-4">
-            <div className="relative">
-              <Search className="absolute left-3 top-3 text-gray-400" size={18} />
-              <Input 
-                placeholder="Cari jajanan..." 
-                className="pl-10" 
-                value={searchTerm}
-                onChange={e => setSearchTerm(e.target.value)}
-              />
+          <div className="sticky top-0 bg-gray-50 pt-0 px-4 z-20 pb-2">
+            <div className="flex gap-2 mb-2">
+                <div className="relative flex-1">
+                <Search className="absolute left-3 top-3 text-gray-400" size={18} />
+                <Input 
+                    placeholder="Cari produk..." 
+                    className="pl-10" 
+                    value={searchTerm}
+                    onChange={e => setSearchTerm(e.target.value)}
+                />
+                </div>
+                <button 
+                    onClick={() => setShowFilter(!showFilter)} 
+                    className={`p-3 rounded-lg border flex items-center gap-2 ${showFilter ? 'bg-brand-green text-white border-brand-green' : 'bg-white text-gray-500 border-gray-200'}`}
+                >
+                    <Filter size={18} />
+                    <span className="text-xs font-medium">Filter</span>
+                </button>
             </div>
+            
+            {showFilter && (
+                <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-200 mb-4 animate-in slide-in-from-top-2">
+                    <h4 className="font-bold text-sm mb-3 text-gray-800">Filter Produk</h4>
+                    
+                    <div className="mb-3">
+                        <label className="text-xs text-gray-500 block mb-1">Nama Penjual</label>
+                        <div className="relative">
+                            <Store className="absolute left-3 top-3 text-gray-400" size={14} />
+                            <Input 
+                                placeholder="Cari nama toko..." 
+                                className="pl-9 text-xs" 
+                                value={filterSellerName}
+                                onChange={e => setFilterSellerName(e.target.value)}
+                            />
+                        </div>
+                    </div>
+
+                    <label className="text-xs text-gray-500 block mb-1">Rentang Harga (Rp)</label>
+                    <div className="flex gap-2 mb-3">
+                        <Input type="number" placeholder="Min" value={minPrice} onChange={e => setMinPrice(e.target.value)} className="text-xs" />
+                        <span className="self-center">-</span>
+                        <Input type="number" placeholder="Max" value={maxPrice} onChange={e => setMaxPrice(e.target.value)} className="text-xs" />
+                    </div>
+                    
+                    <div className="mb-2">
+                        <label className="text-xs text-gray-500 block mb-2">Minimal Rating</label>
+                        <div className="flex gap-2">
+                            {[0,3,4,4.5].map(r => (
+                                <button 
+                                    key={r}
+                                    onClick={() => setFilterRating(r)}
+                                    className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${filterRating === r ? 'bg-brand-green text-white border-brand-green' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}
+                                >
+                                    {r === 0 ? 'Semua' : `${r}+ ⭐`}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+            )}
           </div>
         </>
       )}
 
       {/* Main Content */}
       <div className="p-4 pt-0">
-        {loading && <LoadingSpinner />}
+        {loading && <LoadingSpinner /> }
 
         {/* BROWSE */}
         {view === 'browse' && !loading && (
           <div className="grid grid-cols-2 gap-4">
-            {filteredProducts.map(p => (
-              <div key={p.id} className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden flex flex-col">
+            {filteredProducts.length === 0 ? <p className="col-span-2 text-center text-gray-400 py-10">Produk tidak ditemukan.</p> :
+            filteredProducts.map(p => (
+              <div key={p.id} className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden flex flex-col hover:shadow-md transition-shadow group">
                 <div className="h-32 bg-gray-200 relative">
                   <img src={p.gambar_url} alt={p.nama} className="w-full h-full object-cover" />
                   <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/60 to-transparent p-2">
-                    <p className="text-white text-xs font-semibold truncate">{p.seller_name}</p>
+                    <p className="text-white text-xs font-semibold truncate flex items-center gap-1">
+                        <Store size={10} /> {p.seller_name}
+                    </p>
                   </div>
                 </div>
                 <div className="p-3 flex-1 flex flex-col">
-                  <h3 className="font-bold text-gray-800 text-sm mb-1">{p.nama}</h3>
+                  <div className="flex justify-between items-start mb-1">
+                      {/* ADDED TOOLTIP HERE */}
+                      <h3 className="font-bold text-gray-800 text-sm line-clamp-1 cursor-help" title={p.deskripsi}>{p.nama}</h3>
+                  </div>
+                  <div className="mb-2">
+                     <StarRating rating={p.average_rating || 0} count={p.total_reviews || 0} />
+                  </div>
                   <p className="text-brand-green font-bold text-sm mb-2">Rp {p.harga.toLocaleString()}</p>
                   <div className="mt-auto">
-                    <Button size="sm" onClick={() => addToCart(p)} className="py-2 text-xs w-full">
-                      + Beli
+                    <Button 
+                      size="sm" 
+                      onClick={() => addToCart(p)} 
+                      className={`py-2 text-xs w-full transition-all ${addedToCartId === p.id ? 'bg-brand-dark' : 'bg-brand-green/90 hover:bg-brand-green'}`}
+                    >
+                      {addedToCartId === p.id ? (
+                        <span className="flex items-center gap-1"><CheckCircle size={12} /> Masuk Keranjang</span>
+                      ) : (
+                        <span className="flex items-center gap-1"><Plus size={12} /> Beli</span>
+                      )}
                     </Button>
                   </div>
                 </div>
@@ -267,13 +392,13 @@ export const BuyerDashboard: React.FC<BuyerDashboardProps> = ({ user }) => {
                           <div className="flex justify-between items-center">
                             <span className="font-bold text-brand-green">Rp {(item.harga * item.qty).toLocaleString()}</span>
                             <div className="flex items-center gap-2">
-                              <button onClick={() => updateQty(item.id, -1)} className="p-1 bg-gray-100 rounded"><Minus size={14}/></button>
+                              <button onClick={() => updateQty(item.id, -1)} className="p-1 bg-gray-100 rounded hover:bg-gray-200"><Minus size={14}/></button>
                               <span className="text-sm font-medium w-4 text-center">{item.qty}</span>
-                              <button onClick={() => updateQty(item.id, 1)} className="p-1 bg-gray-100 rounded"><Plus size={14}/></button>
+                              <button onClick={() => updateQty(item.id, 1)} className="p-1 bg-gray-100 rounded hover:bg-gray-200"><Plus size={14}/></button>
                             </div>
                           </div>
                         </div>
-                        <button onClick={() => removeFromCart(item.id)} className="text-red-400 self-start"><X size={16}/></button>
+                        <button onClick={() => removeFromCart(item.id)} className="text-red-400 self-start p-1"><X size={16}/></button>
                       </div>
                     ))}
                     <div className="fixed bottom-20 left-4 right-4 max-w-md mx-auto">
@@ -288,7 +413,7 @@ export const BuyerDashboard: React.FC<BuyerDashboardProps> = ({ user }) => {
                       <MapPin size={48} className="mx-auto text-brand-green" />
                       <div>
                         <h3 className="text-xl font-bold mb-2">Mau diantar kemana?</h3>
-                        <p className="text-gray-500 text-sm">Pilih lokasi agar kami bisa menghitung ongkir jastip.</p>
+                        <p className="text-gray-500 text-sm">Pilih lokasi agar kami bisa menghitung ongkir jastip secara akurat.</p>
                       </div>
                       
                       {/* Option 1: Search */}
@@ -329,12 +454,15 @@ export const BuyerDashboard: React.FC<BuyerDashboardProps> = ({ user }) => {
                        <button onClick={() => setCheckoutStep('location')} className="text-xs text-green-600 underline ml-auto">Ubah</button>
                     </div>
 
-                    <WalletCard userId={user.id} onBalanceChange={setWalletBalance} />
+                    <WalletCard user={user} onBalanceChange={setWalletBalance} />
 
                     {calculateCartTotals().groups.map(group => (
                       <div key={group.sellerId} className="bg-white p-4 rounded-xl shadow-sm border border-green-100">
                         <div className="flex justify-between items-center border-b pb-2 mb-2">
-                          <span className="font-bold text-sm text-gray-700">{group.sellerName}</span>
+                          <div className="flex items-center gap-2">
+                            <Store size={14} className="text-gray-500"/>
+                            <span className="font-bold text-sm text-gray-700">{group.sellerName}</span>
+                          </div>
                           <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">{group.distance.toFixed(1)} km</span>
                         </div>
                         {group.items.map(item => (
@@ -343,12 +471,24 @@ export const BuyerDashboard: React.FC<BuyerDashboardProps> = ({ user }) => {
                             <span>Rp {(item.harga * item.qty).toLocaleString()}</span>
                           </div>
                         ))}
-                        <div className="flex justify-between text-sm text-gray-500 mt-2 pt-2 border-t border-dashed">
-                          <span>Ongkir Jastip</span>
-                          <span>Rp {group.shippingCost.toLocaleString()}</span>
+                        
+                        <div className="mt-3 pt-2 border-t border-dashed bg-gray-50 -mx-4 px-4 pb-2">
+                           <div className="flex justify-between text-xs text-gray-500 mb-1">
+                              <span>Jarak Pengiriman</span>
+                              <span>{group.distance} km</span>
+                           </div>
+                           <div className="flex justify-between text-xs text-gray-500 mb-2">
+                              <span>Tarif Jastip</span>
+                              <span>{api.getRate()} /km</span>
+                           </div>
+                           <div className="flex justify-between text-sm font-semibold text-gray-700">
+                              <span>Total Ongkir</span>
+                              <span>Rp {group.shippingCost.toLocaleString()}</span>
+                           </div>
                         </div>
-                        <div className="flex justify-between font-bold text-brand-green mt-1">
-                          <span>Subtotal</span>
+
+                        <div className="flex justify-between font-bold text-brand-green mt-2 text-base border-t pt-2">
+                          <span>Subtotal Penjual</span>
                           <span>Rp {group.total.toLocaleString()}</span>
                         </div>
                       </div>
@@ -395,8 +535,21 @@ export const BuyerDashboard: React.FC<BuyerDashboardProps> = ({ user }) => {
         {/* ORDERS */}
         {view === 'orders' && (
           <div className="space-y-4">
-             {orders.length === 0 ? <p className="text-center text-gray-500 mt-10">Belum ada riwayat pesanan.</p> :
-             orders.map(o => (
+            {/* Status Tabs */}
+            <div className="flex gap-2 overflow-x-auto pb-2 sticky top-0 bg-gray-50 pt-2 z-10 no-scrollbar">
+                {(['ALL', OrderStatus.PENDING, OrderStatus.DIKIRIM, OrderStatus.SELESAI] as const).map(status => (
+                    <button
+                        key={status}
+                        onClick={() => setOrderStatusFilter(status)}
+                        className={`px-4 py-2 rounded-full text-xs font-bold whitespace-nowrap transition-all shadow-sm ${orderStatusFilter === status ? 'bg-brand-green text-white shadow-green-200' : 'bg-white text-gray-500 border border-gray-200 hover:bg-gray-50'}`}
+                    >
+                        {status === 'ALL' ? 'Semua' : status}
+                    </button>
+                ))}
+            </div>
+
+             {filteredOrders.length === 0 ? <p className="text-center text-gray-500 mt-10">Tidak ada pesanan dengan status ini.</p> :
+             filteredOrders.map(o => (
                <div key={o.id} className="bg-white p-4 rounded-xl shadow-sm border border-gray-100">
                  <div className="flex justify-between mb-2">
                    <span className="text-xs text-gray-500">{new Date(o.created_at).toLocaleDateString()}</span>
@@ -409,21 +562,34 @@ export const BuyerDashboard: React.FC<BuyerDashboardProps> = ({ user }) => {
                      <p className="text-sm text-gray-600">{o.jumlah} item • Rp {o.total_harga.toLocaleString()}</p>
                      <p className="text-xs text-gray-400 mt-1">Seller: {o.seller_id} (Jarak {o.jarak_km}km)</p>
                      
-                     <div className="mt-3 flex justify-end">
-                       <Button 
-                        size="sm" 
-                        variant="secondary" 
-                        className="py-1 px-3 text-xs w-auto"
-                        onClick={() => setActiveChatOrder(o)}
-                       >
-                         <MessageCircle size={14} /> Chat
-                       </Button>
+                     <div className="mt-3 flex justify-end gap-2">
+                        {o.status === OrderStatus.SELESAI && !o.is_reviewed && (
+                            <Button size="sm" variant="outline" className="py-1 px-3 text-xs w-auto" onClick={() => setReviewOrder(o)}>
+                                <Star size={14} /> Ulas
+                            </Button>
+                        )}
+                        <Button 
+                            size="sm" 
+                            variant="secondary" 
+                            className="py-1 px-3 text-xs w-auto"
+                            onClick={() => setActiveChatOrder(o)}
+                        >
+                            <MessageCircle size={14} /> Chat
+                        </Button>
                      </div>
                    </div>
                  </div>
                </div>
              ))}
           </div>
+        )}
+
+        {/* TRANSACTIONS */}
+        {view === 'transactions' && (
+            <div className="space-y-4">
+                <h3 className="font-bold text-gray-700 px-1">Riwayat Transaksi</h3>
+                <TransactionHistory userId={user.id} />
+            </div>
         )}
 
         {/* Chat Modal */}
@@ -435,6 +601,41 @@ export const BuyerDashboard: React.FC<BuyerDashboardProps> = ({ user }) => {
             title={`${activeChatOrder.product_name} (${activeChatOrder.seller_id})`}
           />
         )}
+
+        {/* Review Modal */}
+        {reviewOrder && (
+            <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+                <div className="bg-white rounded-2xl w-full max-w-sm p-6">
+                    <h3 className="font-bold text-lg mb-2">Beri Ulasan</h3>
+                    <p className="text-sm text-gray-500 mb-4">{reviewOrder.product_name}</p>
+                    
+                    <div className="flex justify-center mb-4 gap-2">
+                        {[1,2,3,4,5].map(star => (
+                            <button key={star} onClick={() => setReviewRating(star)}>
+                                <Star 
+                                    size={32} 
+                                    className={`${reviewRating >= star ? 'fill-yellow-400 text-yellow-400' : 'text-gray-300'}`} 
+                                />
+                            </button>
+                        ))}
+                    </div>
+
+                    <textarea 
+                        className="w-full border p-2 rounded-lg mb-4 text-sm" 
+                        rows={3} 
+                        placeholder="Tulis pendapatmu tentang produk ini..."
+                        value={reviewComment}
+                        onChange={e => setReviewComment(e.target.value)}
+                    />
+
+                    <div className="flex gap-2">
+                        <Button variant="outline" onClick={() => setReviewOrder(null)}>Batal</Button>
+                        <Button onClick={submitReview} disabled={loading}>Kirim</Button>
+                    </div>
+                </div>
+            </div>
+        )}
+
       </div>
 
       {/* Bottom Nav */}
@@ -451,6 +652,10 @@ export const BuyerDashboard: React.FC<BuyerDashboardProps> = ({ user }) => {
         <button onClick={() => setView('orders')} className={`p-2 rounded-lg flex flex-col items-center ${view === 'orders' ? 'text-brand-green' : 'text-gray-400'}`}>
           <Package size={20} />
           <span className="text-[10px] font-medium">Pesanan</span>
+        </button>
+        <button onClick={() => setView('transactions')} className={`p-2 rounded-lg flex flex-col items-center ${view === 'transactions' ? 'text-brand-green' : 'text-gray-400'}`}>
+          <Wallet size={20} />
+          <span className="text-[10px] font-medium">Dompet</span>
         </button>
       </div>
     </div>

@@ -108,7 +108,7 @@ export const DriverDashboard: React.FC<DriverDashboardProps> = ({ user }) => {
   return (
     <div>
       <div className="mb-4">
-        <WalletCard userId={user.id} />
+        <WalletCard user={user} />
       </div>
 
       {/* Tabs */}
