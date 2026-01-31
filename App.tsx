@@ -6,16 +6,40 @@ import { SellerDashboard } from './pages/SellerDashboard';
 import { DriverDashboard } from './pages/DriverDashboard';
 import { AdminDashboard } from './pages/AdminDashboard';
 import { User, UserRole } from './types';
+import { api } from './services/api';
 
 const App = () => {
   const [user, setUser] = useState<User | null>(null);
 
   useEffect(() => {
-    // Check local storage for session
-    const storedUser = localStorage.getItem('jastip_session');
-    if (storedUser) {
-      setUser(JSON.parse(storedUser));
-    }
+    // Initial Session Load
+    const initSession = async () => {
+      const storedUserString = localStorage.getItem('jastip_session');
+      if (storedUserString) {
+        const storedUser = JSON.parse(storedUserString);
+        
+        // 1. Set data from local storage immediately for speed
+        setUser(storedUser);
+        
+        // 2. Re-fetch user from API to get the absolute latest data (Saldo, Status, etc)
+        try {
+          // Add a small delay/check or just fetch
+          const freshUser = await api.getUserById(storedUser.id);
+          if (freshUser) {
+            setUser(freshUser);
+            localStorage.setItem('jastip_session', JSON.stringify(freshUser));
+          } else {
+             // If user found in local storage but NOT in DB, they might have been deleted.
+             // We can optionally logout, or keep the session valid until explicit action failure.
+             // For now, let's just log it.
+             console.warn("User session exists locally but not found in online DB.");
+          }
+        } catch (error) {
+           console.error("Network error refreshing session:", error);
+        }
+      }
+    };
+    initSession();
   }, []);
 
   const handleLogin = (loggedInUser: User) => {

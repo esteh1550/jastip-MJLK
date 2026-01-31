@@ -28,7 +28,14 @@ function deg2rad(deg: number) {
 // Helper untuk fetch ke SheetDB dengan Error Handling
 async function fetchSheet(sheetName: string, query?: string) {
   try {
-    const url = `${SHEETDB_API_URL}${query ? query : ''}?sheet=${sheetName}`;
+    let url = `${SHEETDB_API_URL}${query ? query : ''}`;
+    // Cek apakah sudah ada query param (?)
+    const hasQuery = url.includes('?');
+    // Tambahkan sheet param dengan separator yang benar
+    url += `${hasQuery ? '&' : '?'}sheet=${sheetName}`;
+    // Tambahkan cache buster untuk menghindari caching browser
+    url += `&t=${Date.now()}`;
+
     const res = await fetch(url);
     if (!res.ok) return [];
     const data = await res.json();
@@ -96,6 +103,16 @@ export const api = {
     }
 
     const users = await fetchSheet('users', `/search?username=${username}`);
+    return users.length > 0 ? users[0] : null;
+  },
+
+  getUserById: async (id: string): Promise<User | null> => {
+    if (id === 'admin') {
+         const adminOnline = await fetchSheet('users', `/search?id=admin`);
+         if (adminOnline && adminOnline.length > 0) return adminOnline[0];
+         return { id: 'admin', username: 'admin', password: '123', role: UserRole.ADMIN, nama_lengkap: 'Administrator', saldo: 0, nomor_whatsapp: '-', verified: 'Y' };
+    }
+    const users = await fetchSheet('users', `/search?id=${id}`);
     return users.length > 0 ? users[0] : null;
   },
 
