@@ -1,131 +1,127 @@
+
 import React, { useState, useEffect } from 'react';
-import { User } from '../types';
+import { User, UserRole } from '../types';
 import { api } from '../services/api';
 import { Button, Input, LoadingSpinner } from '../components/ui';
-import { CheckCircle, XCircle, Edit, Save, Database, RotateCw } from 'lucide-react';
+import { Edit, Save, Trash, User as UserIcon, Store, Truck, Search, X } from 'lucide-react';
 
-interface AdminDashboardProps {
-  user: User;
-}
-
-export const AdminDashboard: React.FC<AdminDashboardProps> = () => {
+export const AdminDashboard: React.FC<{ user: User }> = ({ user }) => {
   const [users, setUsers] = useState<User[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editForm, setEditForm] = useState<Partial<User>>({});
+  const [loading, setLoading] = useState(false);
+  const [editUser, setEditUser] = useState<User | null>(null);
+  const [tab, setTab] = useState<UserRole | 'ALL'>('ALL');
+  const [searchQuery, setSearchQuery] = useState('');
 
-  useEffect(() => {
-    loadUsers();
-  }, []);
+  useEffect(() => { load(); }, []);
 
-  const loadUsers = async () => {
-    setLoading(true);
-    const data = await api.getAllUsers();
-    setUsers(data);
-    setLoading(false);
+  const load = async () => {
+      setLoading(true);
+      const u = await api.getAllUsers();
+      setUsers(u);
+      setLoading(false);
   };
 
-  const handleSeed = async () => {
-    if(!confirm("Isi database dengan data dummy? Ini akan menambahkan User sampel (Admin, Penjual, Pembeli, Driver) dan Produk.")) return;
-    setLoading(true);
-    await api.seedDatabase();
-    await loadUsers();
-    setLoading(false);
-    alert("Database berhasil diinisialisasi! Sekarang Anda bisa login dengan akun 'admin', 'penjual1', 'pembeli1', atau 'driver1' (Pass: 123).");
+  const handleUpdate = async () => {
+      if(!editUser) return;
+      await api.updateUser(editUser);
+      setEditUser(null);
+      load();
   };
 
-  const toggleVerification = async (user: User) => {
-    const newStatus = user.verified === 'Y' ? 'N' : 'Y';
-    const updatedUser = { ...user, verified: newStatus };
-    
-    // Update State
-    setUsers(prev => prev.map(u => u.id === user.id ? updatedUser : u));
-    // Update API
-    await api.updateUser(updatedUser);
-  };
+  // Logic Filtering: Role + Search Query
+  const filtered = users.filter(u => {
+      const matchRole = tab === 'ALL' || u.role === tab;
+      
+      const q = searchQuery.toLowerCase();
+      const matchSearch = 
+        u.username.toLowerCase().includes(q) || 
+        u.nama_lengkap.toLowerCase().includes(q) || 
+        u.nomor_whatsapp.includes(q);
 
-  const handleEdit = (user: User) => {
-    setEditingId(user.id);
-    setEditForm(user);
-  };
-
-  const handleSave = async () => {
-    if (!editingId || !editForm) return;
-    
-    // Find original to merge
-    const original = users.find(u => u.id === editingId);
-    if (!original) return;
-
-    const updatedUser = { ...original, ...editForm } as User;
-    
-    setUsers(prev => prev.map(u => u.id === editingId ? updatedUser : u));
-    await api.updateUser(updatedUser);
-    setEditingId(null);
-  };
+      return matchRole && matchSearch;
+  });
 
   return (
-    <div className="p-4">
-      <div className="flex justify-between items-center mb-4">
-        <h2 className="text-xl font-bold text-brand-green">Panel Admin</h2>
-        <div className="flex gap-2">
-            <Button size="sm" variant="outline" onClick={loadUsers} className="w-auto px-2"><RotateCw size={14} /></Button>
-            <Button size="sm" variant="secondary" onClick={handleSeed} className="w-auto px-3 text-xs flex gap-1">
-                <Database size={14} /> Init DB
-            </Button>
+    <div className="p-4 bg-slate-50 min-h-screen">
+      <div className="bg-white p-4 rounded-xl shadow-sm mb-4 flex justify-between items-center sticky top-0 z-10">
+          <h1 className="font-bold text-xl text-slate-800">Admin Panel</h1>
+          <Button size="sm" className="w-auto" onClick={() => api.seedDatabase().then(load)}>Init DB</Button>
+      </div>
+
+      {/* Search Bar */}
+      <div className="bg-white p-3 rounded-xl shadow-sm mb-4">
+        <div className="relative">
+            <Search className="absolute left-3 top-3 text-slate-400" size={18} />
+            <input 
+                type="text" 
+                placeholder="Cari Username, Nama, atau WhatsApp..." 
+                className="w-full pl-10 p-2.5 rounded-lg border border-slate-200 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-slate-500 transition-all text-sm font-medium"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+            />
+            {searchQuery && (
+                <button 
+                    onClick={() => setSearchQuery('')}
+                    className="absolute right-3 top-3 text-slate-400 hover:text-red-500"
+                >
+                    <X size={18} />
+                </button>
+            )}
         </div>
       </div>
-      
-      {loading ? <LoadingSpinner /> : (
-        <div className="space-y-4">
-           {users.length === 0 && (
-               <div className="text-center p-6 border-2 border-dashed border-gray-300 rounded-xl bg-gray-50">
-                   <p className="text-gray-500 mb-4">Database Kosong</p>
-                   <Button onClick={handleSeed} className="w-auto mx-auto">Isi Data Dummy</Button>
-               </div>
-           )}
 
-           {users.map(u => (
-             <div key={u.id} className="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
-               {editingId === u.id ? (
-                 <div className="space-y-3">
-                    <div className="font-bold text-gray-500 mb-2">Edit: {u.username}</div>
-                    <Input label="Nama Lengkap" value={editForm.nama_lengkap} onChange={e => setEditForm({...editForm, nama_lengkap: e.target.value})} />
-                    <Input label="WhatsApp" value={editForm.nomor_whatsapp} onChange={e => setEditForm({...editForm, nomor_whatsapp: e.target.value})} />
-                    <Input type="number" label="Saldo (Rp)" value={editForm.saldo} onChange={e => setEditForm({...editForm, saldo: Number(e.target.value)})} />
-                    <div className="flex gap-2">
-                      <Button size="sm" onClick={handleSave} className="bg-blue-600"><Save size={16}/> Simpan</Button>
-                      <Button size="sm" variant="outline" onClick={() => setEditingId(null)}>Batal</Button>
-                    </div>
-                 </div>
-               ) : (
-                 <div className="flex justify-between items-center">
-                   <div>
-                      <div className="flex items-center gap-2">
-                        <h3 className="font-bold text-gray-800">{u.nama_lengkap}</h3>
-                        <span className="text-[10px] px-2 py-0.5 bg-gray-100 rounded-full border">{u.role}</span>
-                      </div>
-                      <p className="text-xs text-gray-500">@{u.username} • WA: {u.nomor_whatsapp || '-'}</p>
-                      <p className="text-xs font-semibold text-brand-green mt-1">Saldo: Rp {(u.saldo || 0).toLocaleString()}</p>
-                   </div>
-                   
-                   <div className="flex flex-col gap-2 items-end">
-                      <button 
-                        onClick={() => toggleVerification(u)}
-                        className={`flex items-center gap-1 text-xs px-2 py-1 rounded-full border ${u.verified === 'Y' ? 'bg-green-50 text-green-700 border-green-200' : 'bg-red-50 text-red-700 border-red-200'}`}
-                      >
-                        {u.verified === 'Y' ? <CheckCircle size={12}/> : <XCircle size={12}/>}
-                        {u.verified === 'Y' ? 'Verified' : 'Unverified'}
-                      </button>
-                      
-                      <button onClick={() => handleEdit(u)} className="p-1.5 bg-gray-100 text-gray-600 rounded hover:bg-gray-200">
-                        <Edit size={16} />
-                      </button>
-                   </div>
-                 </div>
-               )}
-             </div>
-           ))}
-        </div>
+      {/* Role Filters */}
+      <div className="flex gap-2 mb-4 overflow-x-auto pb-2 scrollbar-hide">
+          {['ALL', UserRole.BUYER, UserRole.SELLER, UserRole.DRIVER].map((r: any) => (
+              <button key={r} onClick={() => setTab(r)} className={`px-4 py-2 rounded-lg text-xs font-bold whitespace-nowrap transition-colors ${tab === r ? 'bg-slate-800 text-white shadow-md' : 'bg-white text-slate-500 border border-slate-200'}`}>
+                  {r}
+              </button>
+          ))}
+      </div>
+
+      {loading ? <LoadingSpinner /> : (
+          <div className="space-y-3">
+              {filtered.length === 0 && (
+                  <div className="text-center py-10 text-slate-400">
+                      <p>Tidak ada pengguna ditemukan.</p>
+                  </div>
+              )}
+
+              {filtered.map(u => (
+                  <div key={u.id} className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 transition-all hover:shadow-md">
+                      {editUser?.id === u.id ? (
+                          <div className="space-y-3 bg-slate-50 p-4 rounded-lg border border-slate-300">
+                              <p className="font-bold text-xs text-slate-500 uppercase tracking-wider">Edit User: {u.username}</p>
+                              <Input label="Nama Lengkap" value={editUser.nama_lengkap} onChange={e => setEditUser({...editUser, nama_lengkap: e.target.value})} />
+                              <Input label="Nomor WhatsApp" value={editUser.nomor_whatsapp} onChange={e => setEditUser({...editUser, nomor_whatsapp: e.target.value})} />
+                              <Input label="Password" value={editUser.password || ''} onChange={e => setEditUser({...editUser, password: e.target.value})} />
+                              <Input label="Saldo (Rp)" type="number" value={editUser.saldo} onChange={e => setEditUser({...editUser, saldo: Number(e.target.value)})} />
+                              
+                              <div className="flex gap-2 pt-2">
+                                  <Button size="sm" onClick={handleUpdate} className="bg-slate-800 hover:bg-slate-900 shadow-none"><Save size={14}/> Simpan</Button>
+                                  <Button size="sm" variant="outline" onClick={() => setEditUser(null)} className="border-slate-300 text-slate-600">Batal</Button>
+                              </div>
+                          </div>
+                      ) : (
+                          <div className="flex justify-between items-center">
+                              <div className="flex items-center gap-3">
+                                  <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${u.role === 'DRIVER' ? 'bg-blue-100 text-blue-600' : u.role === 'SELLER' ? 'bg-orange-100 text-orange-600' : 'bg-green-100 text-green-600'}`}>
+                                      {u.role === 'DRIVER' ? <Truck size={18}/> : u.role === 'SELLER' ? <Store size={18}/> : <UserIcon size={18}/>}
+                                  </div>
+                                  <div>
+                                      <h3 className="font-bold text-sm text-slate-800">{u.nama_lengkap}</h3>
+                                      <div className="flex flex-col text-xs text-slate-500 mt-0.5">
+                                        <span>@{u.username} • {u.nomor_whatsapp}</span>
+                                        <span className={`font-bold mt-1 ${u.saldo > 0 ? 'text-green-600' : 'text-slate-400'}`}>Saldo: Rp {u.saldo.toLocaleString()}</span>
+                                      </div>
+                                  </div>
+                              </div>
+                              <button onClick={() => setEditUser(u)} className="p-2 bg-slate-100 rounded-lg hover:bg-slate-200 text-slate-600 transition-colors"><Edit size={16}/></button>
+                          </div>
+                      )}
+                  </div>
+              ))}
+          </div>
       )}
     </div>
   );

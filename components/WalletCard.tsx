@@ -1,9 +1,9 @@
+
 import React, { useState, useEffect } from 'react';
 import { api } from '../services/api';
 import { Button, Input, LoadingSpinner } from './ui';
-import { Wallet, PlusCircle, ArrowUpFromLine, MessageCircle, Info, ShieldAlert } from 'lucide-react';
+import { Wallet, Plus, Send, ArrowUpFromLine, RefreshCw, Smartphone } from 'lucide-react';
 import { User } from '../types';
-import { ChatWindow } from './ChatWindow';
 
 interface WalletCardProps {
   user: User;
@@ -11,157 +11,135 @@ interface WalletCardProps {
 }
 
 export const WalletCard: React.FC<WalletCardProps> = ({ user, onBalanceChange }) => {
-  const [balance, setBalance] = useState<number | null>(null);
+  const [balance, setBalance] = useState<number>(user.saldo || 0);
   const [loading, setLoading] = useState(false);
-  const [showModal, setShowModal] = useState<'topup' | 'withdraw' | null>(null);
+  const [modal, setModal] = useState<'SEND' | 'WITHDRAW' | null>(null);
+  
+  // Transfer State
+  const [targetWa, setTargetWa] = useState('');
   const [amount, setAmount] = useState('');
-  const [showChat, setShowChat] = useState(false);
+  const [foundUser, setFoundUser] = useState<User | null>(null);
 
   const fetchBalance = async () => {
     setLoading(true);
-    const bal = await api.getWalletBalance(user.id);
-    setBalance(bal);
-    if(onBalanceChange) onBalanceChange(bal);
+    const bal = await api.login(user.username); // Refresh user data
+    if (bal) {
+        setBalance(bal.saldo);
+        if(onBalanceChange) onBalanceChange(bal.saldo);
+    }
     setLoading(false);
   };
 
-  useEffect(() => {
-    fetchBalance();
-  }, [user.id]);
+  const checkUser = async () => {
+      const u = await api.getUserByWhatsapp(targetWa);
+      setFoundUser(u);
+      if(!u) alert('Pengguna tidak ditemukan!');
+  };
 
-  const handleTransaction = async () => {
-    const val = Number(amount);
-    
-    // Logic Top Up otomatis dihapus, diganti manual via Admin (lihat render modal)
-    
-    if (showModal === 'withdraw') {
-      // VERIFICATION CHECK
-      if (user.verified !== 'Y') {
-        alert("Akun Anda belum diverifikasi oleh Admin. Silakan hubungi admin untuk verifikasi agar dapat melakukan penarikan.");
-        return;
-      }
+  const handleTransfer = async () => {
+      if(!foundUser || !amount) return;
+      if(Number(amount) > balance) return alert('Saldo tidak cukup!');
+      
+      if(!confirm(`Kirim Rp ${amount} ke ${foundUser.nama_lengkap}?`)) return;
 
-      if (val < 10000) return alert("Minimal Penarikan Rp 10.000");
-      if ((balance || 0) < val) return alert("Saldo tidak mencukupi!");
       setLoading(true);
-      await api.addTransaction(user.id, 'WITHDRAW', val, 'Penarikan Saldo JastipPay');
-      alert("Permintaan penarikan berhasil. Dana akan dikirim ke rekening terdaftar.");
-      setAmount('');
-      setShowModal(null);
-      await fetchBalance();
-    }
+      await api.addTransaction(user.id, 'TRANSFER', Number(amount), `Kirim ke ${foundUser.nama_lengkap}`);
+      await api.addTransaction(foundUser.id, 'INCOME', Number(amount), `Terima dari ${user.nama_lengkap}`);
+      alert('Berhasil!');
+      setModal(null);
+      setTargetWa(''); setAmount(''); setFoundUser(null);
+      fetchBalance();
+  };
+
+  const handleWithdraw = async () => {
+      if(Number(amount) > balance) return alert('Saldo kurang');
+      if(Number(amount) < 10000) return alert('Min Rp 10.000');
+      
+      await api.addTransaction(user.id, 'WITHDRAW', Number(amount), 'Penarikan Tunai');
+      alert('Permintaan penarikan dikirim ke Admin.');
+      setModal(null);
+      fetchBalance();
   };
 
   return (
-    <>
-      <div className="bg-gradient-to-r from-brand-green to-green-600 text-white p-4 rounded-xl shadow-lg mb-6 relative overflow-hidden">
-        <div className="flex justify-between items-center mb-2 relative z-10">
-          <div className="flex items-center gap-2">
-            <Wallet size={20} className="text-brand-yellow" />
-            <span className="font-semibold text-sm opacity-90">JastipPay</span>
-            {user.verified === 'Y' && <span className="bg-white/20 text-[10px] px-1.5 py-0.5 rounded-full text-white">Verified</span>}
-          </div>
-          <button onClick={fetchBalance} className="text-xs bg-white/20 px-2 py-1 rounded hover:bg-white/30">Refresh</button>
-        </div>
-        
-        <div className="text-3xl font-bold tracking-tight mb-4 relative z-10">
-          {balance === null ? <span className="text-sm">Memuat...</span> : `Rp ${balance.toLocaleString()}`}
-        </div>
+    <div className="mb-6">
+      {/* ATM Card Design */}
+      <div className="bg-gradient-to-br from-emerald-800 to-teal-600 rounded-2xl p-6 text-white shadow-2xl relative overflow-hidden border-t border-white/20">
+         <div className="absolute top-0 right-0 w-32 h-32 bg-white/5 rounded-full -mr-10 -mt-10 blur-2xl"></div>
+         <div className="absolute bottom-0 left-0 w-24 h-24 bg-black/10 rounded-full -ml-5 -mb-5 blur-xl"></div>
+         
+         <div className="flex justify-between items-start mb-6 relative z-10">
+            <div>
+                <p className="text-emerald-200 text-xs font-bold tracking-widest uppercase mb-1">JastipPay</p>
+                <h3 className="text-3xl font-mono font-bold tracking-tight">
+                    Rp {balance.toLocaleString('id-ID')}
+                </h3>
+            </div>
+            <div className="bg-white/20 backdrop-blur-md p-2 rounded-lg">
+                <Wallet className="text-white" size={24} />
+            </div>
+         </div>
 
-        <div className="flex gap-2 relative z-10">
-          <button 
-            onClick={() => setShowModal('topup')}
-            className="flex-1 bg-white text-brand-green font-bold py-2 rounded-lg text-sm flex items-center justify-center gap-2 hover:bg-green-50"
-          >
-            <PlusCircle size={16} /> Isi Saldo
-          </button>
-          <button 
-            onClick={() => setShowModal('withdraw')}
-            className="flex-1 bg-brand-dark/30 text-white font-bold py-2 rounded-lg text-sm flex items-center justify-center gap-2 hover:bg-brand-dark/40"
-          >
-            <ArrowUpFromLine size={16} /> Tarik
-          </button>
-        </div>
+         <div className="flex justify-between items-end relative z-10">
+            <div>
+                <p className="text-xs text-emerald-200 mb-1">Pemilik Kartu</p>
+                <p className="font-bold tracking-wide">{user.nama_lengkap.toUpperCase()}</p>
+            </div>
+            <button onClick={fetchBalance} disabled={loading} className={`p-2 rounded-full hover:bg-white/10 ${loading ? 'animate-spin' : ''}`}>
+                <RefreshCw size={18} />
+            </button>
+         </div>
       </div>
 
-      {showModal && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
-          <div className="bg-white text-gray-800 p-6 rounded-2xl w-full max-w-sm">
-            <h3 className="font-bold text-lg mb-4">
-              {showModal === 'topup' ? 'Isi Saldo' : 'Tarik Saldo'}
-            </h3>
-            
-            {showModal === 'topup' ? (
-              <div className="space-y-4">
-                <div className="bg-yellow-50 text-yellow-800 p-4 rounded-xl text-sm border border-yellow-200 flex gap-3 items-start">
-                  <Info size={20} className="shrink-0 mt-0.5" />
-                  <div>
-                    <p className="font-bold mb-1">Top Up Manual</p>
-                    <p>Saat ini pengisian saldo hanya dapat dilakukan oleh Admin.</p>
-                    <p className="mt-2">Silakan hubungi Admin melalui chat untuk melakukan transfer dan konfirmasi.</p>
-                  </div>
-                </div>
+      {/* Action Buttons */}
+      <div className="flex gap-4 mt-4">
+        <button onClick={() => setModal('SEND')} className="flex-1 bg-white p-3 rounded-xl shadow-sm border border-gray-100 flex flex-col items-center gap-1 active:scale-95 transition-transform">
+            <div className="bg-blue-100 text-blue-600 p-2 rounded-full"><Send size={20}/></div>
+            <span className="text-xs font-bold text-gray-600">Kirim</span>
+        </button>
+        <button onClick={() => setModal('WITHDRAW')} className="flex-1 bg-white p-3 rounded-xl shadow-sm border border-gray-100 flex flex-col items-center gap-1 active:scale-95 transition-transform">
+            <div className="bg-orange-100 text-orange-600 p-2 rounded-full"><ArrowUpFromLine size={20}/></div>
+            <span className="text-xs font-bold text-gray-600">Tarik</span>
+        </button>
+        <button className="flex-1 bg-white p-3 rounded-xl shadow-sm border border-gray-100 flex flex-col items-center gap-1 active:scale-95 transition-transform opacity-50 cursor-not-allowed">
+            <div className="bg-green-100 text-green-600 p-2 rounded-full"><Plus size={20}/></div>
+            <span className="text-xs font-bold text-gray-600">Top Up</span>
+        </button>
+      </div>
+
+      {/* Modals */}
+      {modal && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+            <div className="bg-white w-full max-w-sm rounded-2xl p-6">
+                <h3 className="font-bold text-lg mb-4">{modal === 'SEND' ? 'Kirim Saldo' : 'Tarik Tunai'}</h3>
                 
-                <div className="flex gap-3 mt-4">
-                  <Button variant="outline" onClick={() => setShowModal(null)}>Tutup</Button>
-                  <Button onClick={() => { setShowModal(null); setShowChat(true); }}>
-                    <MessageCircle size={18} /> Chat Admin
-                  </Button>
-                </div>
-              </div>
-            ) : (
-              // WITHDRAW UI
-              <>
-                 {user.verified !== 'Y' && (
-                    <div className="bg-red-50 text-red-800 p-3 rounded mb-4 text-xs flex gap-2 border border-red-200">
-                        <ShieldAlert size={16} className="shrink-0" />
-                        <div>
-                            <p className="font-bold">Akun Belum Terverifikasi</p>
-                            <p>Anda tidak dapat melakukan penarikan. Silakan hubungi admin untuk verifikasi data.</p>
+                {modal === 'SEND' && (
+                    <div className="space-y-3">
+                        <div className="flex gap-2">
+                            <Input placeholder="Nomor WhatsApp Teman" value={targetWa} onChange={e => setTargetWa(e.target.value)} />
+                            <Button className="w-auto" onClick={checkUser}><Smartphone size={18}/></Button>
                         </div>
+                        {foundUser && (
+                            <div className="bg-green-50 p-2 rounded border border-green-200 text-sm text-green-800">
+                                Penerima: <b>{foundUser.nama_lengkap}</b>
+                            </div>
+                        )}
+                        <Input type="number" placeholder="Nominal" value={amount} onChange={e => setAmount(e.target.value)} />
+                        <Button onClick={handleTransfer} disabled={!foundUser}>Kirim Sekarang</Button>
                     </div>
-                 )}
+                )}
 
-                <div className="bg-gray-50 p-3 rounded mb-4 text-xs text-gray-500">
-                   Saldo tersedia: Rp {(balance || 0).toLocaleString()}. Dana akan ditransfer ke rekening bank terdaftar Anda.
-                </div>
+                {modal === 'WITHDRAW' && (
+                    <div className="space-y-3">
+                        <Input type="number" placeholder="Nominal (Min 10.000)" value={amount} onChange={e => setAmount(e.target.value)} />
+                        <Button onClick={handleWithdraw}>Ajukan Penarikan</Button>
+                    </div>
+                )}
 
-                <Input 
-                  type="number" 
-                  label="Nominal (Min. 10.000)" 
-                  placeholder="10000"
-                  value={amount}
-                  onChange={e => setAmount(e.target.value)}
-                  disabled={user.verified !== 'Y'}
-                />
-                
-                <div className="flex gap-3 mt-4">
-                  <Button variant="outline" onClick={() => setShowModal(null)}>Batal</Button>
-                  {user.verified !== 'Y' ? (
-                      <Button onClick={() => { setShowModal(null); setShowChat(true); }}>
-                        <MessageCircle size={18} /> Hubungi Admin
-                      </Button>
-                  ) : (
-                    <Button onClick={handleTransaction} disabled={loading}>
-                        {loading ? 'Proses...' : 'Konfirmasi'}
-                    </Button>
-                  )}
-                </div>
-              </>
-            )}
-          </div>
+                <button onClick={() => setModal(null)} className="mt-4 w-full text-center text-gray-500 text-sm font-bold">Batal</button>
+            </div>
         </div>
       )}
-
-      {/* Admin Chat Modal */}
-      {showChat && (
-        <ChatWindow 
-          orderId={`support-${user.id}`} // Special ID for Support Chat
-          currentUser={user}
-          title="Layanan Pelanggan (Admin)"
-          onClose={() => setShowChat(false)}
-        />
-      )}
-    </>
+    </div>
   );
 };

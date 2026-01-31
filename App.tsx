@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { Layout } from './components/Layout';
 import { Auth } from './pages/Auth';
@@ -7,44 +8,36 @@ import { DriverDashboard } from './pages/DriverDashboard';
 import { AdminDashboard } from './pages/AdminDashboard';
 import { User, UserRole } from './types';
 import { api } from './services/api';
+import { Button } from './components/ui';
 
 const App = () => {
   const [user, setUser] = useState<User | null>(null);
+  const [showTutorial, setShowTutorial] = useState(false);
 
   useEffect(() => {
-    // Initial Session Load
     const initSession = async () => {
-      const storedUserString = localStorage.getItem('jastip_session');
-      if (storedUserString) {
-        const storedUser = JSON.parse(storedUserString);
-        
-        // 1. Set data from local storage immediately for speed
-        setUser(storedUser);
-        
-        // 2. Re-fetch user from API to get the absolute latest data (Saldo, Status, etc)
-        try {
-          // Add a small delay/check or just fetch
-          const freshUser = await api.getUserById(storedUser.id);
-          if (freshUser) {
-            setUser(freshUser);
-            localStorage.setItem('jastip_session', JSON.stringify(freshUser));
-          } else {
-             // If user found in local storage but NOT in DB, they might have been deleted.
-             // We can optionally logout, or keep the session valid until explicit action failure.
-             // For now, let's just log it.
-             console.warn("User session exists locally but not found in online DB.");
-          }
-        } catch (error) {
-           console.error("Network error refreshing session:", error);
+      const stored = localStorage.getItem('jastip_session');
+      if (stored) {
+        const u = JSON.parse(stored);
+        setUser(u);
+        const fresh = await api.login(u.username);
+        if(fresh) {
+            setUser(fresh);
+            localStorage.setItem('jastip_session', JSON.stringify(fresh));
         }
       }
     };
     initSession();
   }, []);
 
-  const handleLogin = (loggedInUser: User) => {
-    setUser(loggedInUser);
-    localStorage.setItem('jastip_session', JSON.stringify(loggedInUser));
+  const handleLogin = async (u: User) => {
+    setUser(u);
+    localStorage.setItem('jastip_session', JSON.stringify(u));
+    if(u.is_new) {
+        setShowTutorial(true);
+        // Mark as old
+        await api.updateUser({ id: u.id, is_new: false });
+    }
   };
 
   const handleLogout = () => {
@@ -52,37 +45,33 @@ const App = () => {
     localStorage.removeItem('jastip_session');
   };
 
-  if (!user) {
-    return <Auth onLogin={handleLogin} />;
-  }
+  if (!user) return <Auth onLogin={handleLogin} />;
 
-  let DashboardComponent;
-  let title = "Dashboard";
-
+  let Component;
   switch (user.role) {
-    case UserRole.BUYER:
-      DashboardComponent = <BuyerDashboard user={user} />;
-      title = "Jajanan Majalengka";
-      break;
-    case UserRole.SELLER:
-      DashboardComponent = <SellerDashboard user={user} />;
-      title = "Kelola Toko";
-      break;
-    case UserRole.DRIVER:
-      DashboardComponent = <DriverDashboard user={user} />;
-      title = "Driver Area";
-      break;
-    case UserRole.ADMIN:
-      DashboardComponent = <AdminDashboard user={user} />;
-      title = "Admin Panel";
-      break;
-    default:
-      DashboardComponent = <div>Role tidak dikenali</div>;
+    case UserRole.BUYER: Component = <BuyerDashboard user={user} />; break;
+    case UserRole.SELLER: Component = <SellerDashboard user={user} />; break;
+    case UserRole.DRIVER: Component = <DriverDashboard user={user} />; break;
+    case UserRole.ADMIN: Component = <AdminDashboard user={user} />; break;
+    default: Component = <div>Role Error</div>;
   }
 
   return (
-    <Layout user={user} onLogout={handleLogout} title={title}>
-      {DashboardComponent}
+    <Layout user={user} onLogout={handleLogout} title="Jastip MJLK">
+      {Component}
+      {showTutorial && (
+          <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-6 text-center">
+              <div className="bg-white p-6 rounded-2xl max-w-sm animate-bounce-in">
+                  <h2 className="text-2xl font-bold text-brand-green mb-2">Selamat Datang!</h2>
+                  <p className="text-gray-600 mb-6">
+                      Ini adalah <b>JASTIP MJLK</b>. Gunakan fitur "Isi Saldo" di kartu ATM virtual Anda untuk mulai bertransaksi. 
+                      {user.role === 'SELLER' && ' Mulai dengan upload produk jualan Anda.'}
+                      {user.role === 'DRIVER' && ' Tunggu orderan masuk di dashboard Anda.'}
+                  </p>
+                  <Button onClick={() => setShowTutorial(false)}>Mulai Jelajah</Button>
+              </div>
+          </div>
+      )}
     </Layout>
   );
 };

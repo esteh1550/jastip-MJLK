@@ -50,7 +50,12 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ orderId, currentUser, on
     setMessages(prev => [...prev, tempMsg]);
     setInputText('');
 
-    await api.sendMessage(orderId, currentUser.id, currentUser.nama_lengkap, tempMsg.content);
+    await api.sendMessage({
+      order_id: orderId,
+      sender_id: currentUser.id,
+      sender_name: currentUser.nama_lengkap,
+      content: tempMsg.content
+    });
     setSending(false);
     fetchMessages(); // Sync real ID
   };

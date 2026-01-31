@@ -113,7 +113,7 @@ export const SellerDashboard: React.FC<SellerDashboardProps> = ({ user }) => {
                     <Badge status={o.status} />
                   </div>
                   <h4 className="font-bold">{o.product_name}</h4>
-                  <p className="text-sm">{o.jumlah} item • Rp {o.total_harga.toLocaleString()}</p>
+                  <p className="text-sm">{o.jumlah} item • Rp {(o.product_price * o.jumlah).toLocaleString()}</p>
                   {o.catatan && <p className="text-xs italic bg-gray-50 p-1 mt-1 rounded">"{o.catatan}"</p>}
                   
                   {o.driver_name && <p className="text-xs mt-2 text-blue-600 font-semibold">Driver: {o.driver_name}</p>}

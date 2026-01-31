@@ -1,7 +1,10 @@
+
 import React, { useState } from 'react';
 import { api } from '../services/api';
 import { User, UserRole } from '../types';
 import { Button, Input, LoadingSpinner } from '../components/ui';
+import { MapPin, Truck, Store, User as UserIcon } from 'lucide-react';
+import { LocationPicker } from '../components/LocationPicker';
 
 interface AuthProps {
   onLogin: (user: User) => void;
@@ -12,12 +15,15 @@ export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   
-  // Form State
-  const [username, setUsername] = useState('');
+  // Login
+  const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
-  const [fullName, setFullName] = useState('');
-  const [whatsapp, setWhatsapp] = useState('');
-  const [role, setRole] = useState<UserRole>(UserRole.BUYER);
+
+  // Register
+  const [regData, setRegData] = useState({
+      username: '', password: '', nama_lengkap: '', nomor_whatsapp: '', 
+      role: UserRole.BUYER, desa_kecamatan: '', alamat_lengkap: '', plat_nomor: ''
+  });
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -26,109 +32,129 @@ export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
     
     try {
       if (isLogin) {
-        const user = await api.login(username);
+        const user = await api.login(identifier);
         if (user && user.password === password) {
           onLogin(user);
         } else {
-          setError('Username atau password salah');
+          setError('Username/WhatsApp atau password salah.');
         }
       } else {
+        // Register Logic
         const newUser = await api.register({
-          username,
-          password,
-          nama_lengkap: fullName,
-          nomor_whatsapp: whatsapp,
-          role
+            username: regData.username,
+            password: regData.password,
+            nama_lengkap: regData.nama_lengkap,
+            nomor_whatsapp: regData.nomor_whatsapp,
+            role: regData.role,
+            desa_kecamatan: regData.role === UserRole.SELLER ? regData.desa_kecamatan : undefined,
+            alamat_lengkap: regData.role === UserRole.SELLER ? regData.alamat_lengkap : undefined,
+            plat_nomor: regData.role === UserRole.DRIVER ? regData.plat_nomor : undefined
         });
         onLogin(newUser);
       }
     } catch (err) {
-      setError('Terjadi kesalahan sistem');
+      console.error(err);
+      setError('Terjadi kesalahan koneksi database.');
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center p-6 bg-gradient-to-br from-green-50 to-yellow-50">
-      <div className="w-full max-w-sm bg-white p-8 rounded-3xl shadow-xl">
+    <div className="min-h-screen flex flex-col items-center justify-center p-6 bg-slate-900">
+      <div className="w-full max-w-md bg-white p-8 rounded-3xl shadow-2xl border-4 border-brand-green">
         <div className="text-center mb-8">
-          <h1 className="text-3xl font-extrabold text-brand-green mb-2">JASTIP <span className="text-brand-yellow">MJLK</span></h1>
-          <p className="text-gray-500">Platform Jastip UMKM Majalengka</p>
+          <h1 className="text-4xl font-extrabold text-slate-900 mb-2 tracking-tighter">
+            JASTIP <span className="text-brand-green">MJLK</span>
+          </h1>
+          <p className="text-slate-600 font-medium">Platform UMKM Majalengka</p>
         </div>
 
-        {error && <div className="bg-red-50 text-red-500 p-3 rounded-lg text-sm mb-4 text-center">{error}</div>}
+        {error && <div className="bg-red-100 text-red-700 p-4 rounded-xl font-bold text-sm mb-6 text-center border-2 border-red-200">{error}</div>}
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <Input 
-            placeholder="Username" 
-            value={username} 
-            onChange={(e) => setUsername(e.target.value)} 
-            required 
-          />
-          <Input 
-            type="password" 
-            placeholder="Password" 
-            value={password} 
-            onChange={(e) => setPassword(e.target.value)} 
-            required 
-          />
-          
-          {!isLogin && (
+        <form onSubmit={handleSubmit} className="space-y-5">
+          {isLogin ? (
             <>
-              <Input 
-                placeholder="Nama Lengkap" 
-                value={fullName} 
-                onChange={(e) => setFullName(e.target.value)} 
-                required 
-              />
-              <Input 
-                type="tel"
-                placeholder="Nomor WhatsApp (Contoh: 08123xxx)" 
-                value={whatsapp} 
-                onChange={(e) => setWhatsapp(e.target.value)} 
-                required 
-              />
-              <div className="mb-2">
-                <label className="block text-sm font-medium text-gray-700 mb-2">Saya ingin mendaftar sebagai:</label>
-                <div className="grid grid-cols-3 gap-2">
+                <Input 
+                    label="Username atau Nomor WhatsApp"
+                    placeholder="Contoh: 0812xxx atau udin123" 
+                    value={identifier} 
+                    onChange={(e) => setIdentifier(e.target.value)} 
+                    required 
+                    className="font-semibold text-lg"
+                />
+                <Input 
+                    label="Password"
+                    type="password" 
+                    placeholder="******" 
+                    value={password} 
+                    onChange={(e) => setPassword(e.target.value)} 
+                    required 
+                    className="font-semibold text-lg"
+                />
+            </>
+          ) : (
+            <>
+                <div className="grid grid-cols-3 gap-2 mb-4">
                   {[UserRole.BUYER, UserRole.SELLER, UserRole.DRIVER].map(r => (
                     <button
-                      key={r}
-                      type="button"
-                      onClick={() => setRole(r)}
-                      className={`text-xs font-bold py-2 rounded-lg border ${role === r ? 'bg-brand-green text-white border-brand-green' : 'bg-white text-gray-500 border-gray-200'}`}
+                      key={r} type="button" onClick={() => setRegData({...regData, role: r})}
+                      className={`flex flex-col items-center justify-center p-3 rounded-xl border-2 transition-all ${regData.role === r ? 'bg-brand-green border-brand-green text-white shadow-lg scale-105' : 'bg-gray-50 border-gray-200 text-gray-500'}`}
                     >
-                      {r === UserRole.BUYER ? 'Pembeli' : r === UserRole.SELLER ? 'Penjual' : 'Driver'}
+                      {r === UserRole.BUYER && <UserIcon size={20} />}
+                      {r === UserRole.SELLER && <Store size={20} />}
+                      {r === UserRole.DRIVER && <Truck size={20} />}
+                      <span className="text-xs font-bold mt-1">{r}</span>
                     </button>
                   ))}
                 </div>
-              </div>
+
+                <Input placeholder="Username" value={regData.username} onChange={(e) => setRegData({...regData, username: e.target.value})} required />
+                <Input type="password" placeholder="Password" value={regData.password} onChange={(e) => setRegData({...regData, password: e.target.value})} required />
+                <Input placeholder="Nama Lengkap" value={regData.nama_lengkap} onChange={(e) => setRegData({...regData, nama_lengkap: e.target.value})} required />
+                <Input type="tel" placeholder="Nomor WhatsApp" value={regData.nomor_whatsapp} onChange={(e) => setRegData({...regData, nomor_whatsapp: e.target.value})} required />
+
+                {regData.role === UserRole.SELLER && (
+                    <div className="space-y-4 bg-yellow-50 p-4 rounded-xl border border-yellow-200">
+                        <p className="text-xs font-bold text-yellow-800 uppercase tracking-wide">Detail Toko</p>
+                        <LocationPicker 
+                            label="Lokasi Desa/Kecamatan"
+                            onLocationSelect={(_,__,name) => setRegData({...regData, desa_kecamatan: name})}
+                            placeholder="Cari Desa..."
+                        />
+                        <Input 
+                            placeholder="Alamat Lengkap & Patokan" 
+                            value={regData.alamat_lengkap} 
+                            onChange={(e) => setRegData({...regData, alamat_lengkap: e.target.value})} 
+                            required 
+                        />
+                    </div>
+                )}
+
+                {regData.role === UserRole.DRIVER && (
+                    <div className="bg-blue-50 p-4 rounded-xl border border-blue-200">
+                        <Input 
+                            label="Plat Nomor Kendaraan"
+                            placeholder="E 1234 XX" 
+                            value={regData.plat_nomor} 
+                            onChange={(e) => setRegData({...regData, plat_nomor: e.target.value})} 
+                            required 
+                        />
+                    </div>
+                )}
             </>
           )}
 
-          <Button type="submit" disabled={loading}>
-            {loading ? <LoadingSpinner /> : (isLogin ? 'Masuk' : 'Daftar')}
+          <Button type="submit" disabled={loading} className="py-4 text-lg shadow-xl shadow-green-200">
+            {loading ? <LoadingSpinner /> : (isLogin ? 'MASUK SEKARANG' : 'DAFTAR AKUN')}
           </Button>
         </form>
 
-        <div className="mt-6 text-center">
-          <button onClick={() => setIsLogin(!isLogin)} className="text-sm text-gray-500 hover:text-brand-green transition-colors">
-            {isLogin ? 'Belum punya akun? Daftar' : 'Sudah punya akun? Masuk'}
+        <div className="mt-8 text-center">
+          <button onClick={() => setIsLogin(!isLogin)} className="text-sm font-bold text-slate-500 hover:text-brand-green underline decoration-2 underline-offset-4">
+            {isLogin ? 'Belum punya akun? Daftar disini' : 'Sudah punya akun? Masuk disini'}
           </button>
         </div>
-        
-        {isLogin && (
-          <div className="mt-8 pt-4 border-t text-xs text-gray-400 text-center">
-             <p>Demo Accounts:</p>
-             <div className="grid grid-cols-3 gap-1 mt-1">
-               <span className="bg-gray-100 p-1 rounded cursor-pointer" onClick={() => setUsername('pembeli1')}>pembeli1</span>
-               <span className="bg-gray-100 p-1 rounded cursor-pointer" onClick={() => setUsername('penjual1')}>penjual1</span>
-               <span className="bg-gray-100 p-1 rounded cursor-pointer" onClick={() => setUsername('driver1')}>driver1</span>
-             </div>
-             <p className="mt-1">Pass: 123</p>
-          </div>
-        )}
       </div>
     </div>
   );

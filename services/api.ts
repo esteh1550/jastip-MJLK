@@ -1,357 +1,251 @@
 
 import { User, Product, Order, UserRole, OrderStatus, Transaction, Message, Review } from '../types';
 
-// --- KONFIGURASI DATABASE ---
-// Ganti dengan API ID SheetDB Anda sendiri jika perlu
-const SHEETDB_API_URL = 'https://sheetdb.io/api/v1/c4w14i8u3j50z';
-const BIAYA_PER_KM = 2500;
+// --- KONFIGURASI ---
+// Ganti ID ini dengan API ID SheetDB milik Anda sendiri dari sheetdb.io
+// Sheet harus memiliki tabs: users, products, orders, transactions, messages, reviews
+const SHEETDB_API_URL = 'https://sheetdb.io/api/v1/c4w14i8u3j50z'; 
+
+const RATE_PER_KM = 2500;
+const ADMIN_FEE_BUYER = 2000;
+const ADMIN_FEE_DRIVER_PICKUP = 1000;
+const ADMIN_FEE_SELLER_PERCENT = 0.10; // 10%
 
 // --- Helper Functions ---
-
-// Menghitung Jarak (Haversine)
 export const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
   const R = 6371; 
   const dLat = deg2rad(lat2 - lat1);
   const dLon = deg2rad(lon2 - lon1);
-  const a =
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos(deg2rad(lat1)) * Math.cos(deg2rad(lat2)) *
-    Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) + Math.cos(deg2rad(lat1)) * Math.cos(deg2rad(lat2)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   return parseFloat((R * c).toFixed(2));
 };
 
-function deg2rad(deg: number) {
-  return deg * (Math.PI / 180);
-}
+function deg2rad(deg: number) { return deg * (Math.PI / 180); }
 
-// Helper untuk fetch ke SheetDB dengan Error Handling
 async function fetchSheet(sheetName: string, query?: string) {
   try {
     let url = `${SHEETDB_API_URL}${query ? query : ''}`;
-    // Cek apakah sudah ada query param (?)
-    const hasQuery = url.includes('?');
-    // Tambahkan sheet param dengan separator yang benar
-    url += `${hasQuery ? '&' : '?'}sheet=${sheetName}`;
-    // Tambahkan cache buster untuk menghindari caching browser
-    url += `&t=${Date.now()}`;
-
+    url += `${url.includes('?') ? '&' : '?'}sheet=${sheetName}&t=${Date.now()}`;
     const res = await fetch(url);
-    if (!res.ok) return [];
-    const data = await res.json();
-    return Array.isArray(data) ? data : [];
+    return res.ok ? await res.json() : [];
   } catch (error) {
-    console.error(`Error fetching ${sheetName}:`, error);
+    console.error(`Fetch error ${sheetName}:`, error);
     return [];
   }
 }
 
-// Helper untuk POST (Tambah Data)
 async function postSheet(sheetName: string, data: any) {
-  try {
-    await fetch(`${SHEETDB_API_URL}?sheet=${sheetName}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ data: data })
-    });
-    return data;
-  } catch (error) {
-    console.error(`Error posting to ${sheetName}:`, error);
-    throw error;
-  }
+  await fetch(`${SHEETDB_API_URL}?sheet=${sheetName}`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ data })
+  });
 }
 
-// Helper untuk UPDATE (Edit Data berdasarkan ID)
 async function updateSheet(sheetName: string, id: string, data: any) {
-  try {
-    // SheetDB update endpoint: /id/{value}
-    await fetch(`${SHEETDB_API_URL}/id/${id}?sheet=${sheetName}`, {
-      method: 'PATCH', // Menggunakan PATCH agar hanya update field yang dikirim
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ data: data })
-    });
-  } catch (error) {
-    console.error(`Error updating ${sheetName}:`, error);
-  }
+  await fetch(`${SHEETDB_API_URL}/id/${id}?sheet=${sheetName}`, {
+    method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ data })
+  });
 }
 
-// Helper untuk DELETE
 async function deleteSheet(sheetName: string, id: string) {
-  try {
-    await fetch(`${SHEETDB_API_URL}/id/${id}?sheet=${sheetName}`, {
-      method: 'DELETE'
-    });
-  } catch (error) {
-    console.error(`Error deleting from ${sheetName}:`, error);
-  }
+  await fetch(`${SHEETDB_API_URL}/id/${id}?sheet=${sheetName}`, { method: 'DELETE' });
 }
 
+// --- MAIN API ---
 export const api = {
-  // --- AUTHENTICATION ---
   
-  login: async (username: string): Promise<User | null> => {
-    // Backdoor khusus Admin agar tetap bisa masuk jika Database kosong/error
-    if (username === 'admin') {
-       const adminOnline = await fetchSheet('users', `/search?username=admin`);
-       if (adminOnline && adminOnline.length > 0) {
-           const u = adminOnline[0];
-           return { ...u, saldo: Number(u.saldo || 0) };
-       }
-       
-       // Fallback jika admin belum ada di sheet
-       return { 
-         id: 'admin', username: 'admin', password: '123', role: UserRole.ADMIN, 
-         nama_lengkap: 'Administrator', saldo: 0, nomor_whatsapp: '-', verified: 'Y' 
-       };
+  // --- USER & AUTH ---
+  login: async (identifier: string): Promise<User | null> => {
+    // Admin Hardcode
+    if (identifier === 'esteh') {
+        // Cek apakah data admin ada di DB untuk sync saldo
+        const dbAdmin = await fetchSheet('users', `/search?username=esteh`);
+        if(dbAdmin.length > 0) return { ...dbAdmin[0], saldo: Number(dbAdmin[0].saldo) };
+        
+        return { 
+            id: 'admin', username: 'esteh', password: 'esteh123', role: UserRole.ADMIN, 
+            nama_lengkap: 'Super Admin', nomor_whatsapp: '-', saldo: 0, verified: 'Y' 
+        };
     }
 
-    const users = await fetchSheet('users', `/search?username=${username}`);
+    // Try finding by username OR whatsapp
+    let users = await fetchSheet('users', `/search?username=${identifier}`);
+    if (users.length === 0) {
+        users = await fetchSheet('users', `/search?nomor_whatsapp=${identifier}`);
+    }
+
     if (users.length > 0) {
-        const u = users[0];
-        // PENTING: Konversi saldo dari string (SheetDB) ke number
-        return { ...u, saldo: Number(u.saldo || 0) };
+        return { ...users[0], saldo: Number(users[0].saldo || 0), is_new: users[0].is_new === 'true' };
     }
     return null;
   },
 
-  getUserById: async (id: string): Promise<User | null> => {
-    if (id === 'admin') {
-         const adminOnline = await fetchSheet('users', `/search?id=admin`);
-         if (adminOnline && adminOnline.length > 0) {
-             const u = adminOnline[0];
-             return { ...u, saldo: Number(u.saldo || 0) };
-         }
-         return { id: 'admin', username: 'admin', password: '123', role: UserRole.ADMIN, nama_lengkap: 'Administrator', saldo: 0, nomor_whatsapp: '-', verified: 'Y' };
-    }
-    const users = await fetchSheet('users', `/search?id=${id}`);
-    if (users.length > 0) {
-        const u = users[0];
-        // PENTING: Konversi saldo dari string (SheetDB) ke number
-        return { ...u, saldo: Number(u.saldo || 0) };
-    }
-    return null;
-  },
-
-  register: async (user: Omit<User, 'id'>): Promise<User> => {
+  register: async (user: Omit<User, 'id' | 'saldo' | 'verified'>): Promise<User> => {
     const newUser = { 
       ...user, 
       id: `u${Date.now()}`, 
       saldo: 0, 
-      verified: 'N',
-      created_at: new Date().toISOString()
+      verified: 'Y', // Auto verify for demo
+      is_new: true
     };
     await postSheet('users', newUser);
     return newUser;
   },
 
-  getAllUsers: async (): Promise<User[]> => {
-    const users = await fetchSheet('users');
-    return users.map((u: any) => ({
-        ...u,
-        saldo: Number(u.saldo || 0) // Konversi ke Number
-    }));
+  updateUser: async (user: Partial<User> & { id: string }) => {
+     await updateSheet('users', user.id, user);
   },
 
-  updateUser: async (user: User): Promise<void> => {
-    await updateSheet('users', user.id, user);
+  getAllUsers: async (): Promise<User[]> => {
+    const res = await fetchSheet('users');
+    return res.map((u: any) => ({ ...u, saldo: Number(u.saldo) }));
+  },
+
+  getUserByWhatsapp: async (wa: string): Promise<User | null> => {
+    const res = await fetchSheet('users', `/search?nomor_whatsapp=${wa}`);
+    return res.length > 0 ? { ...res[0], saldo: Number(res[0].saldo) } : null;
   },
 
   // --- PRODUCTS ---
-
   getProducts: async (): Promise<Product[]> => {
-    const products = await fetchSheet('products');
-    // Konversi harga dan stok ke number karena SheetDB return string
-    return products.map((p: any) => ({
-      ...p,
-      harga: Number(p.harga),
-      stok: Number(p.stok),
-      average_rating: Number(p.average_rating || 0),
-      total_reviews: Number(p.total_reviews || 0)
-    }));
+    const res = await fetchSheet('products');
+    return res.map((p: any) => ({ ...p, harga: Number(p.harga), stok: Number(p.stok), average_rating: Number(p.average_rating) }));
   },
 
-  addProduct: async (product: Omit<Product, 'id' | 'created_at'>): Promise<Product> => {
-    const newProduct = { 
-      ...product, 
-      id: `p${Date.now()}`, 
-      created_at: new Date().toISOString(), 
-      average_rating: 0, 
-      total_reviews: 0 
-    };
-    await postSheet('products', newProduct);
-    return newProduct;
+  addProduct: async (p: any) => {
+    const newP = { ...p, id: `p${Date.now()}`, created_at: new Date().toISOString(), average_rating: 0, total_reviews: 0 };
+    await postSheet('products', newP);
   },
 
-  deleteProduct: async (id: string): Promise<void> => {
-    await deleteSheet('products', id);
+  updateProduct: async (id: string, data: Partial<Product>) => {
+      await updateSheet('products', id, data);
   },
 
-  // --- ORDERS ---
+  deleteProduct: async (id: string) => {
+      await deleteSheet('products', id);
+  },
 
+  // --- ORDERS & LOGIC ---
   getOrders: async (): Promise<Order[]> => {
-    const orders = await fetchSheet('orders');
-    return orders.map((o: any) => ({
-      ...o,
-      jumlah: Number(o.jumlah),
-      jarak_km: Number(o.jarak_km),
-      total_ongkir: Number(o.total_ongkir),
-      total_harga: Number(o.total_harga),
-      is_reviewed: o.is_reviewed === 'true' || o.is_reviewed === true
+    const res = await fetchSheet('orders');
+    return res.map((o: any) => ({
+        ...o,
+        jumlah: Number(o.jumlah), product_price: Number(o.product_price),
+        jarak_km: Number(o.jarak_km), biaya_ongkir: Number(o.biaya_ongkir),
+        biaya_admin_buyer: Number(o.biaya_admin_buyer), total_bayar_buyer: Number(o.total_bayar_buyer),
+        is_reviewed: o.is_reviewed === 'true'
     }));
   },
 
-  createOrder: async (ordersData: Omit<Order, 'id' | 'created_at' | 'status'>[]): Promise<void> => {
-    const newOrders = ordersData.map(o => ({
-      ...o,
-      id: `ord${Math.floor(Math.random() * 100000) + Date.now()}`, // ID unik
-      status: OrderStatus.PENDING,
-      created_at: new Date().toISOString(),
-      is_reviewed: false
-    }));
-
-    // 1. Kurangi Stok Produk di Database
-    for (const order of newOrders) {
-      const products = await fetchSheet('products', `/search?id=${order.product_id}`);
-      if (products.length > 0) {
-        const currentStock = Number(products[0].stok);
-        const newStock = Math.max(0, currentStock - order.jumlah);
-        await updateSheet('products', order.product_id, { stok: newStock });
-      }
+  // BUYER: Checkout
+  createOrder: async (orders: any[]) => {
+    // Reduce Stock
+    for(const o of orders) {
+        const prod = await fetchSheet('products', `/search?id=${o.product_id}`);
+        if(prod.length > 0) {
+            await updateSheet('products', o.product_id, { stok: Number(prod[0].stok) - o.jumlah });
+        }
     }
-
-    // 2. Simpan Order
-    await postSheet('orders', newOrders);
+    await postSheet('orders', orders);
   },
 
-  updateOrderStatus: async (orderId: string, status: OrderStatus, driverId?: string, driverName?: string): Promise<void> => {
-    const updateData: any = { status };
-    if (driverId) updateData.driver_id = driverId;
-    if (driverName) updateData.driver_name = driverName;
-    
-    await updateSheet('orders', orderId, updateData);
-  },
-
-  // --- FINANCE (JASTIP PAY) ---
-
-  getWalletBalance: async (userId: string): Promise<number> => {
-    const users = await fetchSheet('users', `/search?id=${userId}`);
-    if (users.length > 0) {
-      // Pastikan return number
-      return Number(users[0].saldo) || 0;
-    }
-    return 0;
-  },
-
-  getTransactions: async (userId: string): Promise<Transaction[]> => {
-    const all = await fetchSheet('transactions', `/search?user_id=${userId}`);
-    return all.map((t: any) => ({
-      ...t,
-      amount: Number(t.amount)
-    })).sort((a: Transaction, b: Transaction) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-  },
-
-  addTransaction: async (userId: string, type: 'TOPUP' | 'PAYMENT' | 'INCOME' | 'WITHDRAW', amount: number, description: string) => {
-    const newTrans: Transaction = {
-      id: `trx${Date.now()}`,
-      user_id: userId,
-      type,
-      amount,
-      description,
-      created_at: new Date().toISOString()
-    };
-
-    await postSheet('transactions', newTrans);
-
-    const users = await fetchSheet('users', `/search?id=${userId}`);
-    if (users.length > 0) {
-      const currentSaldo = Number(users[0].saldo) || 0; // Pastikan currentSaldo adalah number
-      let newSaldo = currentSaldo;
+  // DRIVER: Ambil Order (Bayar 1000 ke Admin)
+  takeOrder: async (orderId: string, driver: User) => {
+      // 1. Potong Saldo Driver (Fee Admin)
+      const newSaldoDriver = driver.saldo - ADMIN_FEE_DRIVER_PICKUP;
+      await updateSheet('users', driver.id, { saldo: newSaldoDriver });
       
-      if (type === 'TOPUP' || type === 'INCOME') {
-        newSaldo = currentSaldo + amount;
-      } else {
-        newSaldo = currentSaldo - amount;
-      }
+      // 2. Tambah Saldo Admin
+      await api.addAdminBalance(ADMIN_FEE_DRIVER_PICKUP, `Fee Driver Order #${orderId}`);
+
+      // 3. Update Order
+      await updateSheet('orders', orderId, { 
+          status: OrderStatus.DRIVER_OTW_PICKUP, 
+          driver_id: driver.id, 
+          driver_name: driver.nama_lengkap 
+      });
+  },
+
+  // SYSTEM: Order Selesai (Distribusi Uang)
+  finishOrder: async (order: Order) => {
+      await updateSheet('orders', order.id, { status: OrderStatus.SELESAI });
+
+      // Hitung Pendapatan
+      const totalOmset = order.product_price * order.jumlah;
+      const feePlatformSeller = totalOmset * ADMIN_FEE_SELLER_PERCENT;
+      const incomeSeller = totalOmset - feePlatformSeller;
+      const incomeDriver = order.biaya_ongkir;
+
+      // 1. Transfer ke Seller
+      await api.addTransaction(order.seller_id, 'INCOME', incomeSeller, `Penjualan #${order.id} (Potongan 10%)`);
       
-      await updateSheet('users', userId, { saldo: newSaldo });
-    }
+      // 2. Transfer ke Driver
+      if(order.driver_id) {
+          await api.addTransaction(order.driver_id, 'INCOME', incomeDriver, `Ongkir Order #${order.id}`);
+      }
 
-    return newTrans;
+      // 3. Masukkan Fee ke Admin (Fee Buyer 2000 + Fee Seller 10%)
+      // Note: Fee Driver 1000 sudah masuk saat takeOrder
+      const totalAdminRevenue = order.biaya_admin_buyer + feePlatformSeller;
+      await api.addAdminBalance(totalAdminRevenue, `Revenue Order #${order.id} (Buyer+Seller)`);
   },
 
-  // --- REVIEWS ---
-
-  addReview: async (review: Omit<Review, 'id' | 'created_at'>): Promise<void> => {
-    const newReview = { 
-        ...review, 
-        id: `rev${Date.now()}`, 
-        created_at: new Date().toISOString() 
-    };
-
-    await postSheet('reviews', newReview);
-    await updateSheet('orders', review.order_id, { is_reviewed: true });
-
-    const productReviews = await fetchSheet('reviews', `/search?product_id=${review.product_id}`);
-    
-    let totalRating = 0;
-    productReviews.forEach((r: any) => totalRating += Number(r.rating));
-    const avgRating = totalRating / productReviews.length;
-
-    await updateSheet('products', review.product_id, {
-        average_rating: avgRating.toFixed(1),
-        total_reviews: productReviews.length
-    });
+  updateOrderStatus: async (id: string, status: OrderStatus) => {
+      await updateSheet('orders', id, { status });
   },
 
-  getReviews: async (productId: string): Promise<Review[]> => {
-     const res = await fetchSheet('reviews', `/search?product_id=${productId}`);
-     return res.map((r: any) => ({...r, rating: Number(r.rating)}));
+  // --- TRANSACTIONS ---
+  getTransactions: async (userId: string) => {
+      const res = await fetchSheet('transactions', `/search?user_id=${userId}`);
+      return res.map((t: any) => ({ ...t, amount: Number(t.amount) })).sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
   },
 
-  // --- MESSAGING ---
+  addTransaction: async (userId: string, type: string, amount: number, description: string) => {
+      // Record Transaction
+      const trx = { id: `tx${Date.now()}${Math.floor(Math.random()*100)}`, user_id: userId, type, amount, description, created_at: new Date().toISOString() };
+      await postSheet('transactions', trx);
 
-  getMessages: async (orderId: string): Promise<Message[]> => {
-    return await fetchSheet('messages', `/search?order_id=${orderId}`);
+      // Update User Balance
+      const user = await fetchSheet('users', `/search?id=${userId}`);
+      if(user.length > 0) {
+          const current = Number(user[0].saldo);
+          const next = (type === 'INCOME' || type === 'TOPUP') ? current + amount : current - amount;
+          await updateSheet('users', userId, { saldo: next });
+      }
   },
 
-  sendMessage: async (orderId: string, senderId: string, senderName: string, content: string) => {
-    const newMsg: Message = {
-      id: `msg${Date.now()}`,
-      order_id: orderId,
-      sender_id: senderId,
-      sender_name: senderName,
-      content,
-      timestamp: new Date().toISOString()
-    };
-    await postSheet('messages', newMsg);
-    return newMsg;
+  addAdminBalance: async (amount: number, desc: string) => {
+      // Cari akun admin (username esteh atau id admin)
+      // Asumsi admin sudah di init di users table dgn id 'admin'
+      await api.addTransaction('admin', 'INCOME', amount, desc);
   },
 
-  // --- UTILS: SEED DATABASE ---
+  // --- REVIEWS & CHAT ---
+  addReview: async (r: any) => {
+      await postSheet('reviews', { ...r, id: `rev${Date.now()}`, created_at: new Date().toISOString() });
+      await updateSheet('orders', r.order_id, { is_reviewed: true });
+      // Recalc Rating (Simplified)
+      const reviews = await fetchSheet('reviews', `/search?product_id=${r.product_id}`);
+      const total = reviews.reduce((acc: number, cur: any) => acc + Number(cur.rating), 0) + r.rating;
+      const avg = total / (reviews.length + 1);
+      await updateSheet('products', r.product_id, { average_rating: avg.toFixed(1), total_reviews: reviews.length + 1 });
+  },
+
+  getMessages: async (orderId: string) => fetchSheet('messages', `/search?order_id=${orderId}`),
+  sendMessage: async (msg: any) => postSheet('messages', { ...msg, id: `msg${Date.now()}`, timestamp: new Date().toISOString() }),
+
+  // --- UTILS ---
+  getRate: () => RATE_PER_KM,
+  getFees: () => ({ buyer: ADMIN_FEE_BUYER, driver: ADMIN_FEE_DRIVER_PICKUP, sellerPct: ADMIN_FEE_SELLER_PERCENT }),
+
   seedDatabase: async () => {
-    // 1. Users Dummy
-    const dummyUsers = [
-        { id: 'admin', username: 'admin', password: '123', role: UserRole.ADMIN, nama_lengkap: 'Administrator', saldo: 0, nomor_whatsapp: '-', verified: 'Y', created_at: new Date().toISOString() },
-        { id: 'u1', username: 'penjual1', password: '123', role: UserRole.SELLER, nama_lengkap: 'Warung Seblak Cihuy', saldo: 0, nomor_whatsapp: '085222333444', verified: 'Y', created_at: new Date().toISOString() },
-        { id: 'u2', username: 'pembeli1', password: '123', role: UserRole.BUYER, nama_lengkap: 'Andi Warga Majalengka', saldo: 500000, nomor_whatsapp: '085777888999', verified: 'Y', created_at: new Date().toISOString() },
-        { id: 'u3', username: 'driver1', password: '123', role: UserRole.DRIVER, nama_lengkap: 'Mang Asep Ojek', saldo: 50000, nomor_whatsapp: '081333444555', verified: 'Y', created_at: new Date().toISOString() },
-    ];
-    
-    const existing = await fetchSheet('users');
-    if (existing.length === 0) {
-        await postSheet('users', dummyUsers);
+    // Init Admin
+    const users = await fetchSheet('users');
+    if(!users.find((u:any) => u.username === 'esteh')) {
+        await postSheet('users', {
+            id: 'admin', username: 'esteh', password: 'esteh123', role: UserRole.ADMIN,
+            nama_lengkap: 'Super Admin', nomor_whatsapp: '-', saldo: 0, verified: 'Y'
+        });
     }
-
-    // 2. Products Dummy
-    const existingProds = await fetchSheet('products');
-    if (existingProds.length === 0) {
-        const dummyProducts = [
-            { id: 'p1', seller_id: 'u1', seller_name: 'Warung Seblak Cihuy', nama: 'Seblak Ceker Pedas', deskripsi: 'Seblak super pedas dengan toping ceker lunak.', harga: 15000, stok: 20, gambar_url: 'https://images.unsplash.com/photo-1563539077-8d2b2c9b3c3e?auto=format&fit=crop&q=80&w=300&h=300', lat_long: '-6.8365,108.2267', address_name: 'Majalengka Kulon', created_at: new Date().toISOString(), average_rating: 0, total_reviews: 0 },
-            { id: 'p2', seller_id: 'u1', seller_name: 'Warung Seblak Cihuy', nama: 'Es Campur Segar', deskripsi: 'Es campur dengan buah naga dan alpukat.', harga: 10000, stok: 50, gambar_url: 'https://images.unsplash.com/photo-1556679343-c7306c1976bc?auto=format&fit=crop&q=80&w=300&h=300', lat_long: '-6.8365,108.2267', address_name: 'Majalengka Kulon', created_at: new Date().toISOString(), average_rating: 0, total_reviews: 0 }
-        ];
-        await postSheet('products', dummyProducts);
-    }
-  },
-
-  getRate: () => BIAYA_PER_KM
+  }
 };
