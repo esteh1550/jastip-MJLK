@@ -93,7 +93,10 @@ export const api = {
     // Backdoor khusus Admin agar tetap bisa masuk jika Database kosong/error
     if (username === 'admin') {
        const adminOnline = await fetchSheet('users', `/search?username=admin`);
-       if (adminOnline && adminOnline.length > 0) return adminOnline[0];
+       if (adminOnline && adminOnline.length > 0) {
+           const u = adminOnline[0];
+           return { ...u, saldo: Number(u.saldo || 0) };
+       }
        
        // Fallback jika admin belum ada di sheet
        return { 
@@ -103,17 +106,30 @@ export const api = {
     }
 
     const users = await fetchSheet('users', `/search?username=${username}`);
-    return users.length > 0 ? users[0] : null;
+    if (users.length > 0) {
+        const u = users[0];
+        // PENTING: Konversi saldo dari string (SheetDB) ke number
+        return { ...u, saldo: Number(u.saldo || 0) };
+    }
+    return null;
   },
 
   getUserById: async (id: string): Promise<User | null> => {
     if (id === 'admin') {
          const adminOnline = await fetchSheet('users', `/search?id=admin`);
-         if (adminOnline && adminOnline.length > 0) return adminOnline[0];
+         if (adminOnline && adminOnline.length > 0) {
+             const u = adminOnline[0];
+             return { ...u, saldo: Number(u.saldo || 0) };
+         }
          return { id: 'admin', username: 'admin', password: '123', role: UserRole.ADMIN, nama_lengkap: 'Administrator', saldo: 0, nomor_whatsapp: '-', verified: 'Y' };
     }
     const users = await fetchSheet('users', `/search?id=${id}`);
-    return users.length > 0 ? users[0] : null;
+    if (users.length > 0) {
+        const u = users[0];
+        // PENTING: Konversi saldo dari string (SheetDB) ke number
+        return { ...u, saldo: Number(u.saldo || 0) };
+    }
+    return null;
   },
 
   register: async (user: Omit<User, 'id'>): Promise<User> => {
@@ -129,7 +145,11 @@ export const api = {
   },
 
   getAllUsers: async (): Promise<User[]> => {
-    return await fetchSheet('users');
+    const users = await fetchSheet('users');
+    return users.map((u: any) => ({
+        ...u,
+        saldo: Number(u.saldo || 0) // Konversi ke Number
+    }));
   },
 
   updateUser: async (user: User): Promise<void> => {
@@ -216,6 +236,7 @@ export const api = {
   getWalletBalance: async (userId: string): Promise<number> => {
     const users = await fetchSheet('users', `/search?id=${userId}`);
     if (users.length > 0) {
+      // Pastikan return number
       return Number(users[0].saldo) || 0;
     }
     return 0;
@@ -243,7 +264,7 @@ export const api = {
 
     const users = await fetchSheet('users', `/search?id=${userId}`);
     if (users.length > 0) {
-      const currentSaldo = Number(users[0].saldo) || 0;
+      const currentSaldo = Number(users[0].saldo) || 0; // Pastikan currentSaldo adalah number
       let newSaldo = currentSaldo;
       
       if (type === 'TOPUP' || type === 'INCOME') {

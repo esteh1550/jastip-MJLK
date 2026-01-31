@@ -27,7 +27,7 @@ export const LocationPicker: React.FC<LocationPickerProps> = ({
   const [loading, setLoading] = useState(false);
   const [showDropdown, setShowDropdown] = useState(false);
   const [selectedName, setSelectedName] = useState(initialValue);
-  const debounceRef = useRef<NodeJS.Timeout | null>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (query.length < 3) {
