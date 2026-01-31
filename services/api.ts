@@ -38,10 +38,10 @@ const isApiConfigured = () => {
 const seedData = () => {
   if (!localStorage.getItem(USERS_KEY)) {
     const users: User[] = [
-      { id: 'u1', username: 'penjual1', password: '123', role: UserRole.SELLER, nama_lengkap: 'Warung Bu Siti' },
-      { id: 'u2', username: 'pembeli1', password: '123', role: UserRole.BUYER, nama_lengkap: 'Budi Santoso' },
-      { id: 'u3', username: 'driver1', password: '123', role: UserRole.DRIVER, nama_lengkap: 'Kang Asep' },
-      { id: 'u4', username: 'penjual2', password: '123', role: UserRole.SELLER, nama_lengkap: 'Toko Oleh-Oleh Majalengka' },
+      { id: 'u1', username: 'penjual1', password: '123', role: UserRole.SELLER, nama_lengkap: 'Warung Bu Siti', saldo: 0 },
+      { id: 'u2', username: 'pembeli1', password: '123', role: UserRole.BUYER, nama_lengkap: 'Budi Santoso', saldo: 0 },
+      { id: 'u3', username: 'driver1', password: '123', role: UserRole.DRIVER, nama_lengkap: 'Kang Asep', saldo: 0 },
+      { id: 'u4', username: 'penjual2', password: '123', role: UserRole.SELLER, nama_lengkap: 'Toko Oleh-Oleh Majalengka', saldo: 0 },
     ];
     localStorage.setItem(USERS_KEY, JSON.stringify(users));
   }
@@ -68,7 +68,7 @@ export const api = {
   },
 
   register: async (user: Omit<User, 'id'>): Promise<User> => {
-    const newUser = { ...user, id: `u${Date.now()}` };
+    const newUser = { ...user, id: `u${Date.now()}`, saldo: 0 };
     if (isApiConfigured()) {
       try {
         await fetch(`${SHEETDB_API_URL}?sheet=users`, {
@@ -188,26 +188,30 @@ export const api = {
   // --- FINANCE (JASTIP PAY) ---
   
   getWalletBalance: async (userId: string): Promise<number> => {
-    let transactions: Transaction[] = [];
-    
+    // 1. Ambil data user terbaru untuk mendapatkan kolom 'saldo'
     if (isApiConfigured()) {
       try {
-        const response = await fetch(`${SHEETDB_API_URL}/search?user_id=${userId}&sheet=transactions`);
-        transactions = await response.json();
-      } catch(e) { console.error("API Error", e); }
+        const response = await fetch(`${SHEETDB_API_URL}/search?id=${userId}&sheet=users`);
+        const data = await response.json();
+        if (data.length > 0) {
+          // Parse karena SheetDB mengembalikan string
+          return Number(data[0].saldo) || 0; 
+        }
+        return 0;
+      } catch(e) { 
+        console.error("API Error", e); 
+        return 0;
+      }
     } else {
-      const allTrans = JSON.parse(localStorage.getItem(TRANSACTIONS_KEY) || '[]');
-      transactions = allTrans.filter((t: Transaction) => t.user_id === userId);
+      const users = JSON.parse(localStorage.getItem(USERS_KEY) || '[]');
+      const user = users.find((u: User) => u.id === userId);
+      return user ? Number(user.saldo) || 0 : 0;
     }
-
-    return transactions.reduce((acc, curr) => {
-      if (curr.type === 'TOPUP' || curr.type === 'INCOME') return acc + Number(curr.amount);
-      if (curr.type === 'PAYMENT' || curr.type === 'WITHDRAW') return acc - Number(curr.amount);
-      return acc;
-    }, 0);
   },
 
+  // Logika update saldo di kolom user saat ada transaksi
   addTransaction: async (userId: string, type: 'TOPUP' | 'PAYMENT' | 'INCOME' | 'WITHDRAW', amount: number, description: string) => {
+    // 1. Simpan history transaksi ke sheet 'transactions'
     const newTrans: Transaction = {
       id: `trx${Date.now()}`,
       user_id: userId,
@@ -219,16 +223,53 @@ export const api = {
 
     if (isApiConfigured()) {
       try {
+        // A. Post History
         await fetch(`${SHEETDB_API_URL}?sheet=transactions`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ data: newTrans })
         });
+
+        // B. Update User Balance (Ambil saldo lama -> Tambah/Kurang -> Patch)
+        // B1. Ambil saldo saat ini
+        const userRes = await fetch(`${SHEETDB_API_URL}/search?id=${userId}&sheet=users`);
+        const userData = await userRes.json();
+        
+        if (userData.length > 0) {
+          const currentSaldo = Number(userData[0].saldo) || 0;
+          let newSaldo = currentSaldo;
+
+          if (type === 'TOPUP' || type === 'INCOME') {
+            newSaldo += amount;
+          } else if (type === 'PAYMENT' || type === 'WITHDRAW') {
+            newSaldo -= amount;
+          }
+
+          // B2. Patch saldo baru ke user
+          await fetch(`${SHEETDB_API_URL}/id/${userId}?sheet=users`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ data: { saldo: newSaldo } })
+          });
+        }
+
       } catch(e) { console.error("API Error", e); }
     } else {
+      // LocalStorage Fallback
       const trans = JSON.parse(localStorage.getItem(TRANSACTIONS_KEY) || '[]');
       trans.push(newTrans);
       localStorage.setItem(TRANSACTIONS_KEY, JSON.stringify(trans));
+
+      // Update User Saldo Locally
+      const users = JSON.parse(localStorage.getItem(USERS_KEY) || '[]');
+      const userIdx = users.findIndex((u: User) => u.id === userId);
+      if (userIdx !== -1) {
+        const currentSaldo = Number(users[userIdx].saldo) || 0;
+        if (type === 'TOPUP' || type === 'INCOME') users[userIdx].saldo = currentSaldo + amount;
+        else users[userIdx].saldo = currentSaldo - amount;
+        
+        localStorage.setItem(USERS_KEY, JSON.stringify(users));
+      }
     }
     return newTrans;
   },

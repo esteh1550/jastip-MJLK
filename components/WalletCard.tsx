@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../services/api';
 import { Button, Input, LoadingSpinner } from './ui';
-import { Wallet, PlusCircle } from 'lucide-react';
+import { Wallet, PlusCircle, ArrowUpFromLine } from 'lucide-react';
 
 interface WalletCardProps {
   userId: string;
@@ -11,7 +11,7 @@ interface WalletCardProps {
 export const WalletCard: React.FC<WalletCardProps> = ({ userId, onBalanceChange }) => {
   const [balance, setBalance] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
-  const [showTopUp, setShowTopUp] = useState(false);
+  const [showModal, setShowModal] = useState<'topup' | 'withdraw' | null>(null);
   const [amount, setAmount] = useState('');
 
   const fetchBalance = async () => {
@@ -26,16 +26,25 @@ export const WalletCard: React.FC<WalletCardProps> = ({ userId, onBalanceChange 
     fetchBalance();
   }, [userId]);
 
-  const handleTopUp = async () => {
+  const handleTransaction = async () => {
     const val = Number(amount);
-    if (val < 10000) return alert("Minimal Top Up Rp 10.000");
     
-    setLoading(true);
-    await api.addTransaction(userId, 'TOPUP', val, 'Top Up Saldo JastipPay');
+    if (showModal === 'topup') {
+      if (val < 10000) return alert("Minimal Top Up Rp 10.000");
+      setLoading(true);
+      await api.addTransaction(userId, 'TOPUP', val, 'Top Up Saldo JastipPay');
+      alert("Top Up Berhasil!");
+    } else if (showModal === 'withdraw') {
+      if (val < 10000) return alert("Minimal Penarikan Rp 10.000");
+      if ((balance || 0) < val) return alert("Saldo tidak mencukupi!");
+      setLoading(true);
+      await api.addTransaction(userId, 'WITHDRAW', val, 'Penarikan Saldo JastipPay');
+      alert("Permintaan penarikan berhasil. Dana akan dikirim ke rekening terdaftar.");
+    }
+    
     setAmount('');
-    setShowTopUp(false);
+    setShowModal(null);
     await fetchBalance();
-    alert("Top Up Berhasil!");
   };
 
   return (
@@ -54,17 +63,33 @@ export const WalletCard: React.FC<WalletCardProps> = ({ userId, onBalanceChange 
 
       <div className="flex gap-2">
         <button 
-          onClick={() => setShowTopUp(true)}
+          onClick={() => setShowModal('topup')}
           className="flex-1 bg-white text-brand-green font-bold py-2 rounded-lg text-sm flex items-center justify-center gap-2 hover:bg-green-50"
         >
           <PlusCircle size={16} /> Isi Saldo
         </button>
+        <button 
+          onClick={() => setShowModal('withdraw')}
+          className="flex-1 bg-brand-dark/30 text-white font-bold py-2 rounded-lg text-sm flex items-center justify-center gap-2 hover:bg-brand-dark/40"
+        >
+          <ArrowUpFromLine size={16} /> Tarik
+        </button>
       </div>
 
-      {showTopUp && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+      {showModal && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
           <div className="bg-white text-gray-800 p-6 rounded-2xl w-full max-w-sm">
-            <h3 className="font-bold text-lg mb-4">Isi Saldo</h3>
+            <h3 className="font-bold text-lg mb-4">
+              {showModal === 'topup' ? 'Isi Saldo' : 'Tarik Saldo'}
+            </h3>
+            
+            <div className="bg-gray-50 p-3 rounded mb-4 text-xs text-gray-500">
+               {showModal === 'topup' 
+                ? 'Saldo akan ditambahkan langsung ke akun Anda.' 
+                : `Saldo tersedia: Rp ${(balance || 0).toLocaleString()}. Dana akan ditransfer ke rekening bank admin.`
+               }
+            </div>
+
             <Input 
               type="number" 
               label="Nominal (Min. 10.000)" 
@@ -72,9 +97,10 @@ export const WalletCard: React.FC<WalletCardProps> = ({ userId, onBalanceChange 
               value={amount}
               onChange={e => setAmount(e.target.value)}
             />
+            
             <div className="flex gap-3 mt-4">
-              <Button variant="outline" onClick={() => setShowTopUp(false)}>Batal</Button>
-              <Button onClick={handleTopUp} disabled={loading}>
+              <Button variant="outline" onClick={() => setShowModal(null)}>Batal</Button>
+              <Button onClick={handleTransaction} disabled={loading}>
                 {loading ? 'Proses...' : 'Konfirmasi'}
               </Button>
             </div>

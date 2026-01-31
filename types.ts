@@ -17,6 +17,7 @@ export interface User {
   password?: string;
   role: UserRole;
   nama_lengkap: string;
+  saldo?: number; // Kolom baru di database sheet users
 }
 
 export interface Product {
