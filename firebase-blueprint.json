@@ -1,0 +1,153 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "A user of the application (buyer, driver, seller, admin)",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "role": { "type": "string", "enum": ["buyer", "driver", "seller", "admin"] },
+        "name": { "type": "string" },
+        "email": { "type": "string" },
+        "phone": { "type": "string" },
+        "isVerified": { "type": "boolean" },
+        "isBanned": { "type": "boolean" },
+        "balance": { "type": "number" },
+        "location": {
+          "type": "object",
+          "properties": {
+            "lat": { "type": "number" },
+            "lng": { "type": "number" }
+          }
+        },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["uid", "role", "name", "email", "phone", "isVerified", "isBanned", "balance", "createdAt"]
+    },
+    "Product": {
+      "title": "Product",
+      "description": "A snack product sold by a seller",
+      "type": "object",
+      "properties": {
+        "sellerId": { "type": "string" },
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "price": { "type": "number" },
+        "imageUrl": { "type": "string" },
+        "isDeleted": { "type": "boolean" },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["sellerId", "name", "description", "price", "isDeleted", "createdAt"]
+    },
+    "Transaction": {
+      "title": "Transaction",
+      "description": "A purchase transaction",
+      "type": "object",
+      "properties": {
+        "buyerId": { "type": "string" },
+        "sellerId": { "type": "string" },
+        "driverId": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "accepted_by_driver", "purchased", "delivering", "completed", "cancelled"] },
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "productId": { "type": "string" },
+              "name": { "type": "string" },
+              "quantity": { "type": "number" },
+              "price": { "type": "number" }
+            }
+          }
+        },
+        "totalAmount": { "type": "number" },
+        "deliveryFee": { "type": "number" },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["buyerId", "sellerId", "status", "items", "totalAmount", "deliveryFee", "createdAt"]
+    },
+    "Chat": {
+      "title": "Chat",
+      "description": "A group chat for a transaction",
+      "type": "object",
+      "properties": {
+        "transactionId": { "type": "string" },
+        "participants": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["transactionId", "participants", "createdAt"]
+    },
+    "Message": {
+      "title": "Message",
+      "description": "A message in a chat",
+      "type": "object",
+      "properties": {
+        "chatId": { "type": "string" },
+        "senderId": { "type": "string" },
+        "text": { "type": "string" },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["chatId", "senderId", "text", "createdAt"]
+    },
+    "Review": {
+      "title": "Review",
+      "description": "A review for a transaction",
+      "type": "object",
+      "properties": {
+        "transactionId": { "type": "string" },
+        "reviewerId": { "type": "string" },
+        "revieweeId": { "type": "string" },
+        "rating": { "type": "number" },
+        "comment": { "type": "string" },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["transactionId", "reviewerId", "revieweeId", "rating", "createdAt"]
+    },
+    "Topup": {
+      "title": "Topup",
+      "description": "A topup or withdrawal request",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "amount": { "type": "number" },
+        "status": { "type": "string", "enum": ["pending", "approved", "rejected"] },
+        "type": { "type": "string", "enum": ["topup", "withdraw"] },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["userId", "amount", "status", "type", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profiles"
+    },
+    "/products/{productId}": {
+      "schema": "Product",
+      "description": "Products for sale"
+    },
+    "/transactions/{transactionId}": {
+      "schema": "Transaction",
+      "description": "Purchase transactions"
+    },
+    "/chats/{chatId}": {
+      "schema": "Chat",
+      "description": "Group chats"
+    },
+    "/chats/{chatId}/messages/{messageId}": {
+      "schema": "Message",
+      "description": "Messages in a chat"
+    },
+    "/reviews/{reviewId}": {
+      "schema": "Review",
+      "description": "Reviews"
+    },
+    "/topups/{topupId}": {
+      "schema": "Topup",
+      "description": "Topup and withdrawal requests"
+    }
+  }
+}
